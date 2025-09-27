@@ -18,6 +18,16 @@ class Result(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
+LSP_DETR_RUNTIME_ENV = RuntimeEnv(
+    pip=[
+        "torch>=2.8.0",
+        "transformers>=4.55.0",
+        "einops>=0.8.1",
+        "torchvision>=0.23.0",
+    ]
+)
+
+
 @serve.deployment(
     num_replicas="auto",
     autoscaling_config={
@@ -31,14 +41,7 @@ class Result(BaseModel):
         "num_cpus": 0.25,
         "num_gpus": 1,
         "memory": 3 * 1024**3,  # quota 3 GiB
-        "runtime_env": RuntimeEnv(
-            pip=[
-                "torch>=2.8.0",
-                "transformers>=4.55.0",
-                "einops>=0.8.1",
-                "torchvision>=0.23.0",
-            ]
-        ),
+        "runtime_env": LSP_DETR_RUNTIME_ENV,
     },
 )
 @serve.ingress(fastapi)
