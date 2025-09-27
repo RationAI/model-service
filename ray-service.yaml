@@ -9,10 +9,10 @@ spec:
         import_path: models.lsp_detr:app
         route_prefix: /lsp-detr
         runtime_env:
-          working_dir: https://gitlab.ics.muni.cz/rationai/infrastructure/model-service/-/archive/develop/model-service-develop.zip?path=models
+          working_dir: https://gitlab.ics.muni.cz/rationai/infrastructure/model-service2/-/archive/develop/model-service2-develop.zip?path=models
 
   rayClusterConfig:
-    rayVersion: 2.48.0
+    rayVersion: 2.49.1
     enableInTreeAutoscaling: true
     autoscalerOptions:
       idleTimeoutSeconds: 60 # number of seconds to wait before scaling down a worker pod which is not using Ray resources.
@@ -30,10 +30,17 @@ spec:
         dashboard-host: "0.0.0.0"
       template:
         spec:
+          securityContext:
+            fsGroupChangePolicy: OnRootMismatch
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
+
           containers:
             - name: ray-head
               image: rayproject/ray:2.48.0-py312
               securityContext:
+                runAsUser: 1000
                 allowPrivilegeEscalation: false
                 capabilities:
                   drop: ["ALL"]
@@ -59,8 +66,8 @@ spec:
 
     workerGroupSpecs:
       - groupName: gpu-group
-        replicas: 0
-        minReplicas: 0
+        replicas: 1
+        minReplicas: 1
         maxReplicas: 2
         rayStartParams: {}
         template:
@@ -71,6 +78,7 @@ spec:
               - name: ray-worker
                 image: rayproject/ray:2.48.0-py312-gpu
                 securityContext:
+                  runAsUser: 1000
                   allowPrivilegeEscalation: false
                   capabilities:
                     drop: ["ALL"]
