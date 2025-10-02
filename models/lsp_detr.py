@@ -15,16 +15,6 @@ class Result(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
-LSP_DETR_RUNTIME_ENV = RuntimeEnv(
-    pip=[
-        "torch>=2.8.0",
-        "transformers>=4.55.0",
-        "einops>=0.8.1",
-        "torchvision>=0.23.0",
-    ]
-)
-
-
 @serve.deployment(
     num_replicas="auto",
     autoscaling_config={
@@ -38,17 +28,22 @@ LSP_DETR_RUNTIME_ENV = RuntimeEnv(
         "num_cpus": 0.25,
         "num_gpus": 1,
         "memory": 3 * 1024**3,
-        "runtime_env": LSP_DETR_RUNTIME_ENV,
+        "runtime_env": RuntimeEnv(
+            pip=[
+                "torch>=2.8.0",
+                "transformers>=4.55.0",
+                "einops>=0.8.1",
+                "torchvision>=0.23.0",
+            ]
+        ),
     },
 )
 @serve.ingress(fastapi)
 class LSPDetr:
-    def __init__(self) -> None:
-        import torch
-        from transformers import AutoImageProcessor, AutoModelForObjectDetection
+    device = "cuda"
 
-        self.torch = torch
-        self.device = "cuda"
+    def __init__(self) -> None:
+        from transformers import AutoImageProcessor, AutoModelForObjectDetection
 
         self.model = AutoModelForObjectDetection.from_pretrained(
             "RationAI/LSP-DETR",
@@ -70,22 +65,6 @@ class LSPDetr:
             256: self.run_model_256,
         }
 
-    @property
-    def torch(self):
-        return self._torch
-
-    @torch.setter
-    def torch(self, value):
-        self._torch = value
-
-    @property
-    def device(self):
-        return self._device
-
-    @device.setter
-    def device(self, value):
-        self._device = value
-
     @serve.batch(max_batch_size=BATCH_SIZE)
     async def run_model_2048(self, images: list[NDArray[np.uint8]]):
         return self._run_model(images)
@@ -103,7 +82,8 @@ class LSPDetr:
         return self._run_model(images)
 
     def _run_model(self, images: list[NDArray[np.uint8]]):
-        torch = self._torch
+        import torch
+
         with (
             torch.inference_mode(),
             torch.autocast(device_type="cuda", dtype=torch.float16),
