@@ -9,20 +9,18 @@ spec:
         import_path: models.lsp_detr:app
         route_prefix: /lsp-detr
         runtime_env:
-          working_dir: https://gitlab.ics.muni.cz/rationai/infrastructure/model-service2/-/archive/develop/model-service2-develop.zip?path=models
+          working_dir: https://gitlab.ics.muni.cz/rationai/infrastructure/model-service/-/archive/develop/model-service-develop.zip?path=models
 
   rayClusterConfig:
-    rayVersion: 2.49.1
+    rayVersion: 2.49.2
     enableInTreeAutoscaling: true
     autoscalerOptions:
       idleTimeoutSeconds: 60 # number of seconds to wait before scaling down a worker pod which is not using Ray resources.
       securityContext:
+        runAsUser: 1000
         allowPrivilegeEscalation: false
         capabilities:
           drop: ["ALL"]
-        runAsNonRoot: true
-        seccompProfile:
-          type: RuntimeDefault
 
     headGroupSpec:
       rayStartParams:
@@ -38,22 +36,19 @@ spec:
 
           containers:
             - name: ray-head
-              image: rayproject/ray:2.48.0-py312
+              image: rayproject/ray:2.49.2-py312
               securityContext:
                 runAsUser: 1000
                 allowPrivilegeEscalation: false
                 capabilities:
                   drop: ["ALL"]
-                runAsNonRoot: true
-                seccompProfile:
-                  type: RuntimeDefault
               resources:
                 limits:
                   cpu: 0
-                  memory: 3Gi
+                  memory: 4Gi
                 requests:
                   cpu: 0
-                  memory: 3Gi
+                  memory: 4Gi
               ports:
                 - containerPort: 6379
                   name: gcs-server
@@ -66,25 +61,28 @@ spec:
 
     workerGroupSpecs:
       - groupName: gpu-group
-        replicas: 1
         minReplicas: 1
         maxReplicas: 2
-        rayStartParams: {}
         template:
           spec:
+            securityContext:
+              fsGroupChangePolicy: OnRootMismatch
+              runAsNonRoot: true
+              seccompProfile:
+                type: RuntimeDefault
             nodeSelector:
               nvidia.com/gpu.product: NVIDIA-A40
             containers:
               - name: ray-worker
-                image: rayproject/ray:2.48.0-py312-gpu
+                image: rayproject/ray:2.49.2-py312-gpu
+                env:
+                  - name: HTTPS_PROXY
+                    value: http://proxy.muni.cz:3128
                 securityContext:
                   runAsUser: 1000
                   allowPrivilegeEscalation: false
                   capabilities:
                     drop: ["ALL"]
-                  runAsNonRoot: true
-                  seccompProfile:
-                    type: RuntimeDefault
                 lifecycle:
                   preStop:
                     exec:
