@@ -125,7 +125,7 @@ wheels = [
 [[package]]
 name = "gigapath"
 version = "0.1.0"
-source = { git = "https://github.com/prov-gigapath/prov-gigapath.git?rev=main#3505f87e197d167522be491bb3f18fb5a08ca584" }
+source = { git = "https://github.com/jiribuchta/prov-gigapath.git?rev=main#d0719067bbe192e3bec527f809a1a994e18ea40e" }
 
 [[package]]
 name = "hf-xet"
@@ -262,7 +262,7 @@ dependencies = [
 requires-dist = [
     { name = "fairscale" },
     { name = "flash-attn", url = "https://github.com/MiroPsota/torch_packages_builder/releases/download/flash_attn-2.8.3/flash_attn-2.8.3%2Bpt2.8.0cu129-cp312-cp312-linux_x86_64.whl" },
-    { name = "gigapath", git = "https://github.com/prov-gigapath/prov-gigapath.git?rev=main" },
+    { name = "gigapath", git = "https://github.com/jiribuchta/prov-gigapath.git?rev=main" },
     { name = "numpy" },
     { name = "timm" },
     { name = "torch", specifier = "==2.8.0" },
