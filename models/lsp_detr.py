@@ -27,6 +27,7 @@ class Result(BaseModel):
     ray_actor_options={
         "num_cpus": 0.25,
         "num_gpus": 1,
+        "accelerator_type": "A40",
         "memory": 3 * 1024**3,
         "runtime_env": RuntimeEnv(
             pip=[
