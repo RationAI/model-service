@@ -39,8 +39,6 @@ class Result(BaseModel):
 )
 @serve.ingress(fastapi)
 class GigapathSlideEncoder:
-    device = "cuda"
-
     def __init__(self) -> None:
         from prov_gigapath.gigapath.slide_encoder import create_model
 
