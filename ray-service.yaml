@@ -60,8 +60,9 @@ spec:
                   name: serve
 
     workerGroupSpecs:
-      - groupName: gpu-group
-        minReplicas: 1
+      - groupName: a40-group
+        replicas: 0
+        minReplicas: 0
         maxReplicas: 2
         template:
           spec:
@@ -72,6 +73,43 @@ spec:
                 type: RuntimeDefault
             nodeSelector:
               nvidia.com/gpu.product: NVIDIA-A40
+            containers:
+              - name: ray-worker
+                image: rayproject/ray:2.49.2-py312-gpu
+                env:
+                  - name: HTTPS_PROXY
+                    value: http://proxy.muni.cz:3128
+                securityContext:
+                  runAsUser: 1000
+                  allowPrivilegeEscalation: false
+                  capabilities:
+                    drop: ["ALL"]
+                lifecycle:
+                  preStop:
+                    exec:
+                      command: ["/bin/sh", "-c", "ray stop"]
+                resources:
+                  limits:
+                    cpu: "4"
+                    memory: "10Gi"
+                    nvidia.com/gpu: "1"
+                  requests:
+                    cpu: "4"
+                    memory: "10Gi"
+
+      - groupName: h100-group
+        replicas: 0
+        minReplicas: 0
+        maxReplicas: 2
+        template:
+          spec:
+            securityContext:
+              fsGroupChangePolicy: OnRootMismatch
+              runAsNonRoot: true
+              seccompProfile:
+                type: RuntimeDefault
+            nodeSelector:
+              nvidia.com/gpu.product: NVIDIA-H100-NVL
             containers:
               - name: ray-worker
                 image: rayproject/ray:2.49.2-py312-gpu
