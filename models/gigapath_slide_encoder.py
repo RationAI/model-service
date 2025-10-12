@@ -67,11 +67,8 @@ class GigapathSlideEncoder:
             torch.autocast(device_type="cuda", dtype=torch.bfloat16),
         ):
             for embeddings, coords in inputs:
-                print("Device of model:", next(self.model.parameters()).device)
                 embeddings = torch.from_numpy(embeddings).to(self.device)
                 coords = torch.from_numpy(coords).to(self.device)
-                print("Device of embeddings:", embeddings.device)
-                print("Device of coords:", coords.device)
                 output = self.model(embeddings, coords)
 
                 results.append(Result(embeddings=output[-1].tolist()))
