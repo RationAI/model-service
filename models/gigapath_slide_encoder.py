@@ -60,6 +60,8 @@ class GigapathSlideEncoder:
 
         results = []
 
+        print(torch.cuda.is_available())
+
         with (
             torch.inference_mode(),
             torch.autocast(device_type="cuda", dtype=torch.bfloat16),
