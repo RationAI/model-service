@@ -1,6 +1,5 @@
 import numpy as np
 from fastapi import FastAPI, Request, status
-from huggingface_hub import login
 from numpy.typing import NDArray
 from pydantic import BaseModel
 from ray import serve
@@ -33,6 +32,7 @@ class Result(BaseModel):
                 "numpy",
                 "timm",
                 "torch==2.8.0",
+                "huggingface-hub",
                 "flash-attn @ https://github.com/MiroPsota/torch_packages_builder/releases/download/flash_attn-2.8.3/flash_attn-2.8.3%2Bpt2.8.0cu129-cp312-cp312-linux_x86_64.whl",
             ]
         ),
@@ -42,6 +42,7 @@ class Result(BaseModel):
 class GigapathSlideEncoder:
     def __init__(self) -> None:
         from models.prov_gigapath.gigapath.slide_encoder import create_model
+        from huggingface_hub import login
 
         login("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")
 
