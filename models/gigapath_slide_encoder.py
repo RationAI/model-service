@@ -41,8 +41,9 @@ class Result(BaseModel):
 @serve.ingress(fastapi)
 class GigapathSlideEncoder:
     def __init__(self) -> None:
-        from models.prov_gigapath.gigapath.slide_encoder import create_model
         from huggingface_hub import login
+
+        from models.prov_gigapath.gigapath.slide_encoder import create_model
 
         login("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")
 
@@ -64,8 +65,11 @@ class GigapathSlideEncoder:
             torch.autocast(device_type="cuda", dtype=torch.bfloat16),
         ):
             for embeddings, coords in inputs:
+                print("Device of model:", next(self.model.parameters()).device)
                 embeddings = torch.from_numpy(embeddings)
                 coords = torch.from_numpy(coords)
+                print("Device of embeddings:", embeddings.device)
+                print("Device of coords:", coords.device)
                 output = self.model(embeddings, coords)
 
                 results.append(Result(embeddings=output[-1].tolist()))
