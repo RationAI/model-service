@@ -15,7 +15,7 @@ spec:
         import_path: models.gigapath_slide_encoder:app
         route_prefix: /gigapath-slide-encoder
         runtime_env:
-          working_dir: https://gitlab.ics.muni.cz/rationai/infrastructure/model-service/-/archive/develop/model-service-develop.zip?path=models
+          working_dir: https://gitlab.ics.muni.cz/rationai/infrastructure/model-service/-/archive/feat/gigapath/model-service-feat-gigapath.zip?path=models
 
   rayClusterConfig:
     rayVersion: 2.49.2
@@ -96,8 +96,8 @@ spec:
                 resources:
                   limits:
                     cpu: 4
-                    memory: 10Gi
+                    memory: 24Gi
                     nvidia.com/gpu: 1
                   requests:
                     cpu: 4
-                    memory: 10Gi
+                    memory: 24Gi
