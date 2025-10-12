@@ -1,5 +1,6 @@
 import numpy as np
 from fastapi import FastAPI, Request, status
+from huggingface_hub import login
 from numpy.typing import NDArray
 from pydantic import BaseModel
 from ray import serve
@@ -41,6 +42,8 @@ class Result(BaseModel):
 class GigapathSlideEncoder:
     def __init__(self) -> None:
         from models.prov_gigapath.gigapath.slide_encoder import create_model
+
+        login("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")
 
         self.model = create_model(
             "hf_hub:prov-gigapath/prov-gigapath", "gigapath_slide_enc12l768d", 1536
