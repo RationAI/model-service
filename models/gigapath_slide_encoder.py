@@ -40,7 +40,7 @@ class Result(BaseModel):
 @serve.ingress(fastapi)
 class GigapathSlideEncoder:
     def __init__(self) -> None:
-        from prov_gigapath.gigapath.slide_encoder import create_model
+        from models.prov_gigapath.gigapath.slide_encoder import create_model
 
         self.model = create_model(
             "hf_hub:prov-gigapath/prov-gigapath", "gigapath_slide_enc12l768d", 1536
