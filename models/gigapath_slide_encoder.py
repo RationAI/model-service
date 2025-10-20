@@ -25,7 +25,7 @@ class Result(BaseModel):
     ray_actor_options={
         "num_cpus": 4,
         "num_gpus": 1,
-        "memory": 12 * 1024**3,
+        "memory": 24 * 1024**3,
         "runtime_env": RuntimeEnv(
             pip=[
                 "fairscale",
