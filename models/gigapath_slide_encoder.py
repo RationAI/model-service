@@ -18,7 +18,7 @@ class Result(BaseModel):
     autoscaling_config={
         "min_replicas": 0,
         "max_replicas": 8,
-        "target_ongoing_requests": 64,
+        "target_ongoing_requests": 1,
         "downscale_delay_s": 60,
         "upscale_delay_s": 60,
     },
@@ -54,26 +54,21 @@ class GigapathSlideEncoder:
         ).to(self.device)
         self.model.eval()
 
-    @serve.batch(max_batch_size=BATCH_SIZE)
     async def run_model(
-        self, inputs: list[tuple[NDArray[np.float32], NDArray[np.float32]]]
-    ) -> list[Result]:
+        self, model_input: tuple[NDArray[np.float32], NDArray[np.float32]]
+    ) -> Result:
         import torch
-
-        results = []
 
         with (
             torch.inference_mode(),
-            torch.autocast(device_type="cuda", dtype=torch.bfloat16),
+            torch.autocast(device_type="cuda", dtype=torch.float16),
         ):
-            for embeddings, coords in inputs:
-                embeddings = torch.from_numpy(embeddings).to(self.device)
-                coords = torch.from_numpy(coords).to(self.device)
-                output = self.model(embeddings, coords)
+            embeddings, coords = model_input
+            embeddings = torch.from_numpy(embeddings).to(self.device)
+            coords = torch.from_numpy(coords).to(self.device)
+            output = self.model(embeddings, coords)
 
-                results.append(Result(embeddings=output[-1].tolist()))
-
-        return results
+        return Result(embeddings=output[-1].tolist())
 
     @fastapi.post("/{length}", response_model=Result, status_code=status.HTTP_200_OK)
     async def process_embeddings(self, length: int, request: Request) -> Result:
