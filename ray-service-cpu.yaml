@@ -1,0 +1,179 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prostate-model-code
+  namespace: rationai-notebooks-ns
+data:
+  prostate_onnx.py: |
+    import os
+    import numpy as np
+    import onnxruntime as ort
+    from ray import serve
+    from starlette.requests import Request
+    from mlflow.tracking import MlflowClient
+    import shutil
+
+    @serve.deployment(ray_actor_options={"num_cpus": 2})
+    class ProstateModel:
+        def __init__(self):
+            model_dir = "model"
+            model_filename = "prostate_model.onnx"
+            os.makedirs(model_dir, exist_ok=True)
+            cached_model_path = os.path.join(model_dir, model_filename)
+
+            if os.path.exists(cached_model_path):
+                model_path = cached_model_path
+            else:
+                try:
+                    client = MlflowClient(tracking_uri=os.environ["MLFLOW_TRACKING_URI"])
+                    run_id = "2ee148b9562444a8b5c5285c61900d9c"
+                        remote_path = "checkpoints/epoch=0-step=6972/prostate_model.onnx"
+
+                    tmp_dir = client.download_artifacts(run_id, remote_path, model_dir)
+                    
+                    if os.path.isdir(tmp_dir):
+                        tmp_model_file = os.path.join(tmp_dir, model_filename)
+                        shutil.move(tmp_model_file, cached_model_path)
+                    else:
+                        shutil.move(tmp_dir, cached_model_path)
+
+                    model_path = cached_model_path
+                except Exception as e:
+                    raise RuntimeError("Cannot initialize ProstateModel due to download error") from e
+
+            self.session = ort.InferenceSession(model_path, providers=["CPUExecutionProvider"])
+
+        async def __call__(self, request: Request):
+            data = await request.json()
+            input_data = np.array(data["input"], dtype=np.float32)
+            outputs = self.session.run(None, {"input": input_data})
+            return {"prediction": outputs[0].tolist()}
+
+    app = ProstateModel.bind()
+
+---
+apiVersion: ray.io/v1
+kind: RayService
+metadata:
+  name: rayservice-prostate
+  namespace: rationai-notebooks-ns
+spec:
+  serveConfigV2: |
+    applications:
+      - name: prostate-onnx
+        import_path: prostate_onnx:app
+        route_prefix: /prostate
+        runtime_env:
+          pip:
+            - mlflow==2.18.0
+            - onnxruntime
+            - numpy
+          env_vars:
+            MLFLOW_TRACKING_URI: "http://mlflow.rationai-mlflow:5000"
+            HTTP_PROXY: "http://proxy.muni.cz:3128"
+            HTTPS_PROXY: "http://proxy.muni.cz:3128"
+            NO_PROXY: ".svc.cluster.local,.rationai-mlflow"
+            PYTHONPATH: "/home/ray/code"
+          setup_timeout_seconds: 1800
+        deployments:
+          - name: ProstateModel
+            autoscaling_config:
+              min_replicas: 1
+              max_replicas: 1
+            ray_actor_options:
+              num_cpus: 2
+
+  rayClusterConfig:
+    rayVersion: 2.49.2
+    enableInTreeAutoscaling: false
+
+    headGroupSpec:
+      rayStartParams:
+        dashboard-host: "0.0.0.0"
+        num-cpus: "0"
+      template:
+        spec:
+          securityContext:
+            fsGroupChangePolicy: OnRootMismatch
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: ray-head
+              image: rayproject/ray:2.49.2-py312
+              env:
+                - name: HTTPS_PROXY
+                  value: http://proxy.muni.cz:3128
+                - name: NO_PROXY
+                  value: ".svc.cluster.local,.rationai-mlflow"
+              volumeMounts:
+                - name: model-code
+                  mountPath: /home/ray/code
+              securityContext:
+                runAsUser: 1000
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
+              resources:
+                limits:
+                  cpu: 1
+                  memory: 4Gi
+                requests:
+                  cpu: 1
+                  memory: 2Gi
+              ports:
+                - containerPort: 6379
+                  name: gcs-server
+                - containerPort: 8265
+                  name: dashboard
+                - containerPort: 10001
+                  name: client
+                - containerPort: 8000
+                  name: serve
+          volumes:
+            - name: model-code
+              configMap:
+                name: prostate-model-code
+
+    workerGroupSpecs:
+    - groupName: cpu-workers
+      replicas: 1
+      template:
+        spec:
+          containers:
+            - name: ray-worker
+              image: rayproject/ray:2.49.2-py312
+              resources:
+                limits:
+                  cpu: 4
+                  memory: 8Gi
+                requests:
+                  cpu: 4
+                  memory: 4Gi
+              env:
+                - name: MLFLOW_TRACKING_URI
+                  value: "http://mlflow.rationai-mlflow:5000"
+                - name: HTTP_PROXY
+                  value: "http://proxy.muni.cz:3128"
+                - name: HTTPS_PROXY
+                  value: "http://proxy.muni.cz:3128"
+                - name: NO_PROXY
+                  value: ".svc.cluster.local,.rationai-mlflow"
+              volumeMounts:
+                - name: model-code
+                  mountPath: /home/ray/code
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
+                runAsUser: 1000
+          securityContext:
+            fsGroupChangePolicy: OnRootMismatch
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
+          volumes:
+            - name: model-code
+              configMap:
+                name: prostate-model-code
