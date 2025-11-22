@@ -18,7 +18,7 @@ data:
     class ProstateModel:
         def __init__(self):
             model_dir = "model"
-            model_filename = "prostate_model.onnx"
+            model_filename = "model_cpu.onnx"
             os.makedirs(model_dir, exist_ok=True)
             cached_model_path = os.path.join(model_dir, model_filename)
 
@@ -27,8 +27,8 @@ data:
             else:
                 try:
                     client = MlflowClient(tracking_uri=os.environ["MLFLOW_TRACKING_URI"])
-                    run_id = "2ee148b9562444a8b5c5285c61900d9c"
-                        remote_path = "checkpoints/epoch=0-step=6972/prostate_model.onnx"
+                    run_id = "aebc892f526047249b972f200bef4381"
+                    remote_path = "checkpoints/epoch=0-step=6972/model_cpu.onnx"
 
                     tmp_dir = client.download_artifacts(run_id, remote_path, model_dir)
                     
@@ -120,7 +120,7 @@ spec:
                   cpu: 1
                   memory: 4Gi
                 requests:
-                  cpu: 1
+                  cpu: 500m
                   memory: 2Gi
               ports:
                 - containerPort: 6379
