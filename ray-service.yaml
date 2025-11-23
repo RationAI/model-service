@@ -2,20 +2,56 @@ apiVersion: ray.io/v1
 kind: RayService
 metadata:
   name: rayservice-models
+  namespace: rationai-notebooks-ns
 spec:
   serveConfigV2: |
     applications:
-      - name: LSP-DETR
+      # 1. Prostate Model (CPU / ONNX)
+      - name: prostate-onnx
+        import_path: models.prostate_onnx:app
+        route_prefix: /prostate
+        runtime_env:
+          working_dir: https://gitlab.ics.muni.cz/rationai/infrastructure/model-service/-/archive/develop/model-service-develop.zip?path=models
+          pip:
+            - mlflow==2.18.0
+            - onnxruntime
+            - numpy
+          env_vars:
+            MLFLOW_TRACKING_URI: "http://mlflow.rationai-mlflow.svc.cluster.local:5000"
+            HTTP_PROXY: "http://proxy.muni.cz:3128"
+            HTTPS_PROXY: "http://proxy.muni.cz:3128"
+            NO_PROXY: ".svc.cluster.local,.rationai-mlflow,mlflow.rationai-mlflow,mlflow.rationai-mlflow.svc.cluster.local,localhost,127.0.0.1"
+        
+        deployments:
+          - name: ProstateModel
+            autoscaling_config:
+              min_replicas: 1
+              max_replicas: 2
+            ray_actor_options:
+              num_cpus: 2
+
+      # 2. Nuclei Detection Model (GPU / LSP-DETR)
+      - name: lsp-detr
         import_path: models.lsp_detr:app
         route_prefix: /lsp-detr
         runtime_env:
           working_dir: https://gitlab.ics.muni.cz/rationai/infrastructure/model-service/-/archive/develop/model-service-develop.zip?path=models
+          pip:
+            - torch
+            - torchvision
+            - transformers
+            - numpy
+            - pillow
+          env_vars:
+            HTTP_PROXY: "http://proxy.muni.cz:3128"
+            HTTPS_PROXY: "http://proxy.muni.cz:3128"
+            NO_PROXY: ".svc.cluster.local,.rationai-mlflow,localhost,127.0.0.1"
 
   rayClusterConfig:
     rayVersion: 2.49.2
     enableInTreeAutoscaling: true
     autoscalerOptions:
-      idleTimeoutSeconds: 60 # number of seconds to wait before scaling down a worker pod which is not using Ray resources.
+      idleTimeoutSeconds: 60
       securityContext:
         runAsUser: 1000
         allowPrivilegeEscalation: false
@@ -33,15 +69,9 @@ spec:
             runAsNonRoot: true
             seccompProfile:
               type: RuntimeDefault
-
           containers:
             - name: ray-head
               image: rayproject/ray:2.49.2-py312
-              securityContext:
-                runAsUser: 1000
-                allowPrivilegeEscalation: false
-                capabilities:
-                  drop: ["ALL"]
               resources:
                 limits:
                   cpu: 0
@@ -52,14 +82,62 @@ spec:
               ports:
                 - containerPort: 6379
                   name: gcs-server
-                - containerPort: 8265 # Ray dashboard
+                - containerPort: 8265
                   name: dashboard
                 - containerPort: 10001
                   name: client
                 - containerPort: 8000
                   name: serve
+              env:
+                - name: HTTPS_PROXY
+                  value: http://proxy.muni.cz:3128
+                - name: NO_PROXY
+                  value: .svc.cluster.local,.rationai-mlflow,localhost,127.0.0.1
+              securityContext:
+                runAsUser: 1000
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
 
     workerGroupSpecs:
+      - groupName: cpu-workers
+        replicas: 1
+        minReplicas: 1
+        maxReplicas: 4
+        template:
+          spec:
+            securityContext:
+              fsGroupChangePolicy: OnRootMismatch
+              runAsNonRoot: true
+              seccompProfile:
+                type: RuntimeDefault
+            containers:
+              - name: ray-worker
+                image: rayproject/ray:2.49.2-py312
+                resources:
+                  limits:
+                    cpu: 4
+                    memory: 8Gi
+                  requests:
+                    cpu: 2
+                    memory: 4Gi
+                env:
+                  - name: HTTP_PROXY
+                    value: "http://proxy.muni.cz:3128"
+                  - name: HTTPS_PROXY
+                    value: "http://proxy.muni.cz:3128"
+                  - name: NO_PROXY
+                    value: ".svc.cluster.local,.rationai-mlflow,localhost,127.0.0.1"
+                securityContext:
+                  allowPrivilegeEscalation: false
+                  capabilities:
+                    drop: ["ALL"]
+                  runAsUser: 1000
+                lifecycle:
+                  preStop:
+                    exec:
+                      command: ["/bin/sh", "-c", "ray stop"]
+
       - groupName: a40-group
         replicas: 0
         minReplicas: 0
@@ -76,9 +154,20 @@ spec:
             containers:
               - name: ray-worker
                 image: rayproject/ray:2.49.2-py312-gpu
+                resources:
+                  limits:
+                    cpu: 4
+                    memory: 10Gi
+                    nvidia.com/gpu: 1
+                  requests:
+                    cpu: 4
+                    memory: 10Gi
+                    nvidia.com/gpu: 1
                 env:
                   - name: HTTPS_PROXY
                     value: http://proxy.muni.cz:3128
+                  - name: NO_PROXY
+                    value: .svc.cluster.local,.rationai-mlflow,localhost,127.0.0.1
                 securityContext:
                   runAsUser: 1000
                   allowPrivilegeEscalation: false
@@ -88,14 +177,6 @@ spec:
                   preStop:
                     exec:
                       command: ["/bin/sh", "-c", "ray stop"]
-                resources:
-                  limits:
-                    cpu: "4"
-                    memory: "10Gi"
-                    nvidia.com/gpu: "1"
-                  requests:
-                    cpu: "4"
-                    memory: "10Gi"
 
       - groupName: h100-group
         replicas: 0
@@ -113,9 +194,20 @@ spec:
             containers:
               - name: ray-worker
                 image: rayproject/ray:2.49.2-py312-gpu
+                resources:
+                  limits:
+                    cpu: 4
+                    memory: 10Gi
+                    nvidia.com/gpu: 1
+                  requests:
+                    cpu: 4
+                    memory: 10Gi
+                    nvidia.com/gpu: 1
                 env:
                   - name: HTTPS_PROXY
                     value: http://proxy.muni.cz:3128
+                  - name: NO_PROXY
+                    value: .svc.cluster.local,.rationai-mlflow,localhost,127.0.0.1
                 securityContext:
                   runAsUser: 1000
                   allowPrivilegeEscalation: false
@@ -125,11 +217,3 @@ spec:
                   preStop:
                     exec:
                       command: ["/bin/sh", "-c", "ray stop"]
-                resources:
-                  limits:
-                    cpu: 4
-                    memory: 10Gi
-                    nvidia.com/gpu: 1
-                  requests:
-                    cpu: 4
-                    memory: 10Gi
