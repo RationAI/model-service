@@ -13,11 +13,10 @@ class ProstateModel:
         mlflow_uri = os.environ.get(
             "MLFLOW_TRACKING_URI", "http://mlflow.rationai-mlflow:5000"
         )
-        run_id = "aebc892f526047249b972f200bef4381"
-        artifact_path = "checkpoints/epoch=0-step=6972/model_cpu.onnx"
+        artifact_uri = "mlflow-artifacts:/65/aebc892f526047249b972f200bef4381/artifacts/checkpoints/epoch=0-step=6972/model_cpu.onnx"
 
         model_path = mlflow.artifacts.download_artifacts(
-            artifact_uri=f"runs:/{run_id}/{artifact_path}", tracking_uri=mlflow_uri
+            artifact_uri=artifact_uri, tracking_uri=mlflow_uri
         )
 
         self.session = ort.InferenceSession(
