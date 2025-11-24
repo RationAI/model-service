@@ -32,6 +32,9 @@ class ProstateModel:
         self.input_name = self.session.get_inputs()[0].name
         self.output_name = self.session.get_outputs()[0].name
 
+    def _sigmoid(self, x: np.ndarray) -> np.ndarray:
+        return 1 / (1 + np.exp(-x))
+
     @fastapi.post("/")
     async def predict(self, payload: ProstateInput):
         x = np.array(payload.input, dtype=np.float32)
@@ -45,7 +48,30 @@ class ProstateModel:
             self.session.run, [self.output_name], {self.input_name: x}
         )
 
-        return {"prediction": outputs[0].tolist()}
+        logits = outputs[0]
+        probabilities = self._sigmoid(logits)  # type: ignore # Apply sigmoid
+        predictions = (probabilities > 0.5).astype(int)
+
+        results = []
+        for i in range(len(logits)):  # type: ignore
+            logit = float(logits[i][0])  # type: ignore
+            prob = float(probabilities[i][0])
+            pred = int(predictions[i][0])
+
+            results.append(
+                {
+                    "class": pred,
+                    "label": "positive" if pred == 1 else "negative",
+                    "probability": prob,
+                    "confidence": abs(prob - 0.5) * 2,
+                    "logit": logit,
+                }
+            )
+
+        return {
+            "predictions": results,
+            "batch_size": len(logits),  # type: ignore
+        }
 
 
 app = ProstateModel.bind()
