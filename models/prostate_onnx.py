@@ -14,7 +14,7 @@ class ProstateInput(BaseModel):
     input: list
 
 
-@serve.deployment(route_prefix="/prostate", ray_actor_options={"num_cpus": 2})
+@serve.deployment(ray_actor_options={"num_cpus": 2})
 @serve.ingress(fastapi)
 class ProstateModel:
     def __init__(self):
