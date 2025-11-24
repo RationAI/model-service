@@ -32,7 +32,7 @@ class ProstateModel:
         self.input_name = self.session.get_inputs()[0].name
         self.output_name = self.session.get_outputs()[0].name
 
-    @fastapi.post("")
+    @fastapi.post("/")
     async def predict(self, payload: ProstateInput):
         x = np.array(payload.input, dtype=np.float32)
 
