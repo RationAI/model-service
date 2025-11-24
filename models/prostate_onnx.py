@@ -1,33 +1,49 @@
-import os
+import asyncio
 
 import mlflow.artifacts
 import numpy as np
 import onnxruntime as ort
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 from ray import serve
-from starlette.requests import Request
+
+fastapi = FastAPI()
 
 
-@serve.deployment(ray_actor_options={"num_cpus": 2})
+class ProstateInput(BaseModel):
+    input: list
+
+
+@serve.deployment(route_prefix="/prostate", ray_actor_options={"num_cpus": 2})
+@serve.ingress(fastapi)
 class ProstateModel:
     def __init__(self):
-        mlflow_uri = os.environ.get(
-            "MLFLOW_TRACKING_URI", "http://mlflow.rationai-mlflow:5000"
+        artifact_uri = (
+            "mlflow-artifacts:/65/aebc892f526047249b972f200bef4381/"
+            "artifacts/checkpoints/epoch=0-step=6972/model_cpu.onnx"
         )
-        artifact_uri = "mlflow-artifacts:/65/aebc892f526047249b972f200bef4381/artifacts/checkpoints/epoch=0-step=6972/model_cpu.onnx"
 
-        model_path = mlflow.artifacts.download_artifacts(
-            artifact_uri=artifact_uri, tracking_uri=mlflow_uri
-        )
+        model_path = mlflow.artifacts.download_artifacts(artifact_uri)
 
         self.session = ort.InferenceSession(
             model_path, providers=["CPUExecutionProvider"]
         )
 
-    async def __call__(self, request: Request):
-        data = await request.json()
-        input_data = np.array(data["input"], dtype=np.float32)
+        self.input_name = self.session.get_inputs()[0].name
+        self.output_name = self.session.get_outputs()[0].name
 
-        outputs = self.session.run(None, {"input": input_data})
+    @fastapi.post("")
+    async def predict(self, payload: ProstateInput):
+        x = np.array(payload.input, dtype=np.float32)
+
+        if x.ndim == 3:
+            x = np.expand_dims(x, 0)
+        if x.ndim != 4:
+            raise HTTPException(400, f"Input must be 3D or 4D. Got shape {x.shape}")
+
+        outputs = await asyncio.to_thread(
+            self.session.run, [self.output_name], {self.input_name: x}
+        )
 
         return {"prediction": outputs[0].tolist()}
 
