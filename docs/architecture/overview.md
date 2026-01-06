@@ -47,13 +47,12 @@ The foundation of Model Service, providing distributed computing infrastructure.
 - Cluster coordination and management
 - Dashboard for monitoring
 - Scheduling decisions
-- Does not run model workloads (no CPU/GPU assigned)
+- Typically configured with 0 CPU/GPU for user workloads (cluster coordination only)
 
 **Worker Nodes:**
 
 - Execute model inference workloads
 - Can be CPU-only or GPU-enabled
-
 - Auto-scale based on demand
 - Different worker groups for different hardware types
 
@@ -211,23 +210,21 @@ resources:
 
 **Ray Cluster:**
 
-- Head node failure → Cluster recreated by KubeRay
-- Worker failure → Workload rescheduled to other workers
-- Network partition → Automatic reconnection
+- Worker pod failure → Ray reschedules work when possible, KubeRay recreates pods
+- Head pod failure → KubeRay typically restarts the head, but the cluster (and Serve) may be briefly unavailable during recovery
+- In general, expect automatic recovery from many pod-level failures, but not strict “no-downtime” guarantees
 
 **Ray Serve:**
 
 - Replica failure → Requests routed to healthy replicas
 - Failed replicas automatically restarted
-- Graceful shutdown on updates
+- Graceful shutdown is supported when configured properly, but does not guarantee zero dropped requests.
 
-### Zero-Downtime Updates
+### Updates and Downtime
 
-Model updates use blue-green deployment:
+RayService updates are reconciled by KubeRay and are designed to minimize downtime, but the exact behavior depends on your Ray/KubeRay versions and the change being applied.
 
-1. New version deployed alongside old
-2. Traffic gradually shifted to new version
-3. Old version removed when no active requests
+In practice, updates may temporarily run old and new replicas at the same time while shifting traffic to healthy replicas.
 
 ```yaml
 spec:
@@ -284,7 +281,7 @@ kubectl describe rayservice <rayservice-name> -n [namespace]
 
 ### Metrics
 
-Ray exports Prometheus metrics:
+Ray can export Prometheus metrics (when metrics collection/export is enabled):
 
 - Request latency
 - Request throughput
@@ -318,7 +315,7 @@ kind: RayService
 ### 4. Fault Tolerance
 
 - Automatic recovery from failures
-- No single point of failure (except data plane)
+- Ray Head Node is a logical single point of control - failures are recoverable but may cause brief service disruption
 - Graceful degradation
 
 ### 5. Developer Experience
@@ -330,5 +327,5 @@ kind: RayService
 ## Next Steps
 
 - [Deployment guide](../guides/deployment-guide.md)
-- [Configuration reference](../reference/configuration-reference.md)
+- [Configuration reference](../guides/configuration-reference.md)
 - [Adding new models](../guides/adding-models.md)

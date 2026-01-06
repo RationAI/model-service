@@ -132,7 +132,7 @@ Watch the deployment progress:
 kubectl get rayservice rayservice-my-model -n [namespace] -w
 
 # Check pods
-kubectl get pods -n [namespace] -l ray.io/cluster
+kubectl get pods -n [namespace] -l ray.io/cluster=rayservice-my-model
 
 # View head node logs
 kubectl logs -n [namespace] -l ray.io/node-type=head -f
@@ -152,20 +152,11 @@ Check service endpoints:
 kubectl get svc -n [namespace]
 
 # Port forward to test
-kubectl port-forward -n rationai-notebooks-ns \
+kubectl port-forward -n [namespace] \
   svc/rayservice-my-model-serve-svc 8000:8000
 ```
 
-!!! note
 The example model in this repository (`models/binary_classifier.py`) uses FastAPI ingress and expects a **compressed binary request body** (LZ4), not JSON. The JSON `curl` example below is valid for JSON-based models but does not apply to `BinaryClassifier`.
-
-Test the endpoint:
-
-```bash
-curl -X POST http://localhost:8000/my-model \
-  -H "Content-Type: application/json" \
-  -d '{"input": [1.0, 2.0, 3.0]}'
-```
 
 ## Production Considerations
 
@@ -307,13 +298,6 @@ serveConfigV2: |
             num_gpus: 1
 ```
 
-Access models:
-
-```bash
-curl http://service:8000/model-a -d '{"input": ...}'
-curl http://service:8000/model-b -d '{"input": ...}'
-```
-
 ## Updating Deployments
 
 ### Update Model Code
@@ -326,17 +310,17 @@ curl http://service:8000/model-b -d '{"input": ...}'
 
 ```bash
 # Edit configuration
-vim ray-service.yaml
+vim ray-service.yaml # or any IDE
 
 # Apply changes
-kubectl apply -f ray-service.yaml
+kubectl apply -f ray-service.yaml -n [namespace]
 ```
 
-Ray will perform rolling update:
+KubeRay will reconcile the RayService and attempt a rolling-style update:
 
-- New replicas created with new config
-- Traffic gradually shifted
-- Old replicas removed
+- New replicas are created with the new config
+- Traffic is routed to healthy replicas
+- Old replicas are eventually removed
 
 ### Update Model Weights
 
@@ -351,7 +335,7 @@ user_config:
 Apply update:
 
 ```bash
-kubectl apply -f ray-service.yaml
+kubectl apply -f ray-service.yaml -n [namespace]
 ```
 
 ## Rollback
@@ -363,18 +347,11 @@ If deployment fails, rollback:
 # Instead, view KubeRay status and events, then re-apply a known-good spec.
 
 # Inspect current state and recent events
-kubectl get rayservice rayservice-my-model -n rationai-notebooks-ns -o yaml
-kubectl describe rayservice rayservice-my-model -n rationai-notebooks-ns
+kubectl get rayservice rayservice-my-model -n [namespace] -o yaml
+kubectl describe rayservice rayservice-my-model -n [namespace]
 
 # Check Ray Serve controller logs (usually shows the root cause)
-kubectl logs -n rationai-notebooks-ns -l ray.io/node-type=head --tail=200
-```
-
-Or manually apply previous configuration:
-
-```bash
-git checkout HEAD~1 ray-service.yaml
-kubectl apply -f ray-service.yaml
+kubectl logs -n [namespace] -l ray.io/node-type=head --tail=200
 ```
 
 ## Troubleshooting
@@ -384,7 +361,7 @@ kubectl apply -f ray-service.yaml
 **Check RayService status:**
 
 ```bash
-kubectl describe rayservice rayservice-my-model -n rationai-notebooks-ns
+kubectl describe rayservice rayservice-my-model -n [namespace]
 ```
 
 **Common issues:**
@@ -400,10 +377,10 @@ kubectl describe rayservice rayservice-my-model -n rationai-notebooks-ns
 
 ```bash
 # View dashboard
-kubectl port-forward svc/rayservice-my-model-head-svc 8265:8265
+kubectl port-forward -n [namespace] svc/rayservice-my-model-head-svc 8265:8265
 
 # Check logs
-kubectl logs -n rationai-notebooks-ns -l ray.io/node-type=worker --tail=100
+kubectl logs -n [namespace] -l ray.io/node-type=worker --tail=100
 ```
 
 **Common issues:**
@@ -419,7 +396,7 @@ kubectl logs -n rationai-notebooks-ns -l ray.io/node-type=worker --tail=100
 
 ```bash
 # Ray dashboard: http://localhost:8265
-kubectl port-forward svc/rayservice-my-model-head-svc 8265:8265
+kubectl port-forward -n [namespace] svc/rayservice-my-model-head-svc 8265:8265
 ```
 
 **Possible solutions:**
@@ -441,7 +418,7 @@ kubectl port-forward svc/rayservice-my-model-head-svc 8265:8265
 
 ## Next Steps
 
-- [Configuration reference](../reference/configuration-reference.md)
+- [Configuration reference](configuration-reference.md)
 - [Architecture overview](../architecture/overview.md)
 - [Adding new models](adding-models.md)
 - [Troubleshooting](troubleshooting.md)

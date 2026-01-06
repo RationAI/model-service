@@ -167,5 +167,5 @@ spec:
 
 ## Next Steps
 
-- [Deployment guide](../guides/deployment-guide.md)
+- [Deployment guide](deployment-guide.md)
 - [Architecture overview](../architecture/overview.md)
