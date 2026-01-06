@@ -72,7 +72,7 @@ Once deployed, you can port-forward the service to access it locally:
 
 ```bash
 # Port-forward to access the service locally
-kubectl port-forward svc/rayservice-models-serve-svc -n [namespace] 8000:8000
+kubectl port-forward -n [namespace] svc/rayservice-models-serve-svc 8000:8000
 ```
 
 ## Step 6: Delete the Deployed Model
@@ -83,6 +83,10 @@ To delete the deployed RayService, run:
 kubectl delete -f ray-service.yaml -n [namespace]
 ```
 
+### Connection Issues
+
+Ensure your cluster has proper network policies and that the namespace has access to required resources (MLflow, proxy, etc.).
+
 ## Next Steps
 
 Congratulations! You've successfully deployed your first model with Model Service.
@@ -92,9 +96,5 @@ Now you can:
 - [Learn how to add your own models](../guides/adding-models.md)
 - [Understand the architecture](../architecture/overview.md)
 - [Read the deployment guide](../guides/deployment-guide.md)
-- [Check configuration reference](../reference/configuration-reference.md)
+- [Check configuration reference](../guides/configuration-reference.md)
 - [Troubleshooting](../guides/troubleshooting.md)
-
-### Connection Issues
-
-Ensure your cluster has proper network policies and that the namespace has access to required resources (MLflow, proxy, etc.).

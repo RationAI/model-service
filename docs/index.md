@@ -10,7 +10,7 @@ Model Service is a deployment framework that enables:
 - **Distributed Inference**: Distribute inference workloads across multiple workers and nodes
 - **Resource Management**: Efficiently manage CPU and GPU resources in Kubernetes
 - **Model Versioning**: Integration with MLflow for model lifecycle management
-- **Production Ready**: Built on Ray Serve with fault tolerance and high availability
+- **Production-oriented**: Built on Ray Serve and KubeRay, with autoscaling and failure recovery features
 
 ## Key Features
 

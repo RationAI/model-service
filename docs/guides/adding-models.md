@@ -36,7 +36,6 @@ class MyModel:
 app = MyModel.bind()
 ```
 
-!!! note
 The repository's reference model `BinaryClassifier` uses FastAPI ingress + batched inference and expects a **compressed binary payload** (not JSON). For simple JSON models, the examples above are fine; for high-throughput image inference, consider the batching and ingress patterns shown below.
 
 ### Key Components
@@ -140,7 +139,6 @@ class BatchedModel:
         return {"prediction": result}
 ```
 
-!!! tip
 For binary/image workloads, you can also batch raw `bytes` like the `BinaryClassifier` does (see `models/binary_classifier.py`). This avoids JSON overhead and lets you control batch sizing via `user_config` by calling `set_max_batch_size()` and `set_batch_wait_timeout_s()`.
 
 ### Using FastAPI
@@ -246,8 +244,7 @@ spec:
                   - onnxruntime>=1.23.2
 ```
 
-!!! note
-In this repo, the production `ray-service.yaml` installs model dependencies under `deployments[*].ray_actor_options.runtime_env.pip` (not only at `applications[*].runtime_env`). This is useful when different deployments need different dependencies.
+In this repository, the production `ray-service.yaml` installs model dependencies under `deployments[*].ray_actor_options.runtime_env.pip` (not only at `applications[*].runtime_env`). This is useful when different deployments need different dependencies.
 
 ## GPU Models
 
@@ -321,5 +318,5 @@ kubectl logs -n [namespace] -l ray.io/node-type=worker --tail=100
 ## Next Steps
 
 - [Deployment guide](deployment-guide.md)
-- [Configuration reference](../reference/configuration-reference.md)
+- [Configuration reference](configuration-reference.md)
 - [Architecture overview](../architecture/overview.md)

@@ -1,7 +1,7 @@
 site_name: Model Service Documentation
 site_description: Model deployment infrastructure for RationAI using Ray Serve on Kubernetes
 repo_url: https://gitlab.ics.muni.cz/rationai/infrastructure/model-service
-edit_uri: edit/master/docs/
+edit_uri: -/edit/master/docs/
 
 theme:
   name: material
@@ -25,11 +25,10 @@ nav:
   - Guides:
       - Deployment Guide: guides/deployment-guide.md
       - Adding New Models: guides/adding-models.md
+      - Configuration Reference: guides/configuration-reference.md
       - Troubleshooting: guides/troubleshooting.md
   - Architecture:
       - Overview: architecture/overview.md
-  - Reference:
-      - Configuration Reference: reference/configuration-reference.md
 
 markdown_extensions:
   - admonition
