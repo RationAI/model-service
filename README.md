@@ -31,14 +31,14 @@ Full walkthrough: `docs/get-started/quick-start.md`.
 ### Deploy
 
 ```bash
-kubectl apply -f ray-service.yaml -n rationai-notebooks-ns
-kubectl get rayservice rayservice-models -n rationai-notebooks-ns
+kubectl apply -f ray-service.yaml -n [namespace]
+kubectl get rayservice rayservice-models -n [namespace]
 ```
 
 ### Access locally
 
 ```bash
-kubectl port-forward -n rationai-notebooks-ns svc/rayservice-models-serve-svc 8000:8000
+kubectl port-forward -n [namespace] svc/rayservice-models-serve-svc 8000:8000
 ```
 
 ### Test the reference model (`BinaryClassifier`)
