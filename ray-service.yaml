@@ -22,7 +22,6 @@ spec:
               num_cpus: 6
               memory: 6442450944 # 6 GiB
               runtime_env:
-                pip: ["onnxruntime>=1.23.2", "mlflow<3.0", "lz4>=4.4.5"]
                 env_vars:
                   MLFLOW_TRACKING_URI: http://mlflow.rationai-mlflow:5000
             user_config:
@@ -47,17 +46,17 @@ spec:
             max_queued_requests: 64
             autoscaling_config:
               min_replicas: 0
-              max_replicas: 2
+              max_replicas: 4
               target_ongoing_requests: 4
             ray_actor_options:
               num_cpus: 12
               memory: 12884901888 # 12 GiB
               runtime_env:
-                pip: ["onnxruntime>=1.23.2", "mlflow<3.0", "lz4>=4.4.5"]
                 env_vars:
                   MLFLOW_TRACKING_URI: http://mlflow.rationai-mlflow:5000
             user_config:
               tile_size: 1024
+              mpp: 0.468
               max_batch_size: 2
               batch_wait_timeout_s: 0.5
               intra_op_num_threads: 11
@@ -65,8 +64,29 @@ spec:
                 _target_: providers.model_provider:mlflow
                 artifact_uri: mlflow-artifacts:/10/39f821ed5b964c71a603cc6db196f9fd/artifacts/checkpoints/epoch=19-step=32020/model.onnx/model.onnx
 
+
+      - name: heatmap-builder
+        import_path: builders.segmentation_mask_builder:app
+        route_prefix: /heatmap-builder
+        runtime_env:
+          working_dir: https://gitlab.ics.muni.cz/rationai/infrastructure/model-service/-/archive/master/model-service-master.zip
+        deployments:
+          - name: HeatmapBuilder
+            max_ongoing_requests: 16
+            max_queued_requests: 64
+            autoscaling_config:
+              min_replicas: 0
+              max_replicas: 2
+              target_ongoing_requests: 2
+            ray_actor_options:
+              num_cpus: 4
+              memory: 12884901888 # 12 GiB
+            user_config:
+              num_threads: 4
+              max_concurrent_tasks: 8
+
   rayClusterConfig:
-    rayVersion: 2.52.1
+    rayVersion: 2.53.0
     enableInTreeAutoscaling: true
     autoscalerOptions:
       idleTimeoutSeconds: 60
@@ -89,7 +109,8 @@ spec:
               type: RuntimeDefault
           containers:
             - name: ray-head
-              image: rayproject/ray:2.52.1-py312
+              image: rayproject/ray:2.53.0-py312
+              imagePullPolicy: Always
               resources:
                 limits:
                   cpu: 0
@@ -126,14 +147,15 @@ spec:
                 type: RuntimeDefault
             containers:
               - name: ray-worker
-                image: rayproject/ray:2.52.1-py312
+                image: cerit.io/rationai/model-service:2.53.0
+                imagePullPolicy: Always
                 resources:
                   limits:
-                    cpu: 12
-                    memory: 12Gi
+                    cpu: 32
+                    memory: 32Gi
                   requests:
-                    cpu: 12
-                    memory: 12Gi
+                    cpu: 32
+                    memory: 32Gi
                 env:
                   - name: HTTPS_PROXY
                     value: http://proxy.ics.muni.cz:3128
@@ -146,3 +168,21 @@ spec:
                   preStop:
                     exec:
                       command: ["/bin/sh", "-c", "ray stop"]
+                volumeMounts:
+                  - name: data
+                    mountPath: /mnt/data
+                  - name: public-data
+                    mountPath: /mnt/data/Public
+                  - name: projects
+                    mountPath: /mnt/projects
+
+            volumes:
+              - name: data
+                persistentVolumeClaim:
+                  claimName: data-ro
+              - name: public-data
+                persistentVolumeClaim:
+                  claimName: rationai-data-ro-pvc-jobs
+              - name: projects
+                persistentVolumeClaim:
+                  claimName: projects-rw

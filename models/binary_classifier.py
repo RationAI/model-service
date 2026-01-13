@@ -53,8 +53,8 @@ class BinaryClassifier:
         self.input_name = self.session.get_inputs()[0].name
         self.output_name = self.session.get_outputs()[0].name
 
-        self.predict.set_max_batch_size(config["max_batch_size"])
-        self.predict.set_batch_wait_timeout_s(config["batch_wait_timeout_s"])
+        self.predict.set_max_batch_size(config["max_batch_size"])  # type: ignore[attr-defined]
+        self.predict.set_batch_wait_timeout_s(config["batch_wait_timeout_s"])  # type: ignore[attr-defined]
 
     @serve.batch
     async def predict(self, images: list[NDArray[np.uint8]]) -> list[float]:
@@ -78,4 +78,4 @@ class BinaryClassifier:
         return await self.predict(image.transpose(2, 0, 1))
 
 
-app = BinaryClassifier.bind()
+app = BinaryClassifier.bind()  # type: ignore[attr-defined]

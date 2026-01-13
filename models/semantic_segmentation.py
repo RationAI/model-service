@@ -8,6 +8,7 @@ from ray import serve
 
 class Config(TypedDict):
     tile_size: int
+    mpp: float
     model: dict[str, Any]
     max_batch_size: int
     batch_wait_timeout_s: float
@@ -33,6 +34,7 @@ class SemanticSegmentation:
         import onnxruntime as ort
 
         self.tile_size = config["tile_size"]
+        self.mpp = config["mpp"]
 
         sess_options = ort.SessionOptions()
         sess_options.intra_op_num_threads = config["intra_op_num_threads"]
@@ -48,15 +50,23 @@ class SemanticSegmentation:
         self.input_name = self.session.get_inputs()[0].name
         self.output_name = self.session.get_outputs()[0].name
 
-        self.predict.set_max_batch_size(config["max_batch_size"])
-        self.predict.set_batch_wait_timeout_s(config["batch_wait_timeout_s"])
+        self.predict.set_max_batch_size(config["max_batch_size"])  # type: ignore[attr-defined]
+        self.predict.set_batch_wait_timeout_s(config["batch_wait_timeout_s"])  # type: ignore[attr-defined]
+
+    def get_config(self) -> dict[str, Any]:
+        return {
+            "tile_size": self.tile_size,
+            "mpp": self.mpp,
+        }
 
     @serve.batch
-    async def predict(self, images: list[NDArray[np.uint8]]) -> list[bytes]:
+    async def predict(
+        self, images: list[NDArray[np.uint8]]
+    ) -> list[NDArray[np.float16]]:
         batch = np.stack(images, axis=0)
         outputs = self.session.run([self.output_name], {self.input_name: batch})
 
-        return [mask.tobytes() for mask in outputs[0].astype(np.float16)]
+        return list(outputs[0].astype(np.float16))
 
     @fastapi.post("/")
     async def root(self, request: Request) -> Response:
@@ -65,10 +75,12 @@ class SemanticSegmentation:
             self.tile_size, self.tile_size, 3
         )
 
+        prediction = await self.predict(image.transpose(2, 0, 1))
+
         return Response(
-            content=self.lz4.compress(await self.predict(image.transpose(2, 0, 1))),
+            content=self.lz4.compress(prediction.tobytes()),
             media_type="application/octet-stream",
         )
 
 
-app = SemanticSegmentation.bind()
+app = SemanticSegmentation.bind()  # type: ignore[attr-defined]
