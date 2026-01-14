@@ -66,7 +66,7 @@ spec:
 
 
       - name: heatmap-builder
-        import_path: builders.segmentation_mask_builder:app
+        import_path: builders.heatmap_builder:app
         route_prefix: /heatmap-builder
         runtime_env:
           working_dir: https://gitlab.ics.muni.cz/rationai/infrastructure/model-service/-/archive/master/model-service-master.zip
