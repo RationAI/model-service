@@ -175,6 +175,8 @@ spec:
                     mountPath: /mnt/data/Public
                   - name: projects
                     mountPath: /mnt/projects
+                  - name: bioptic-tree
+                    mountPath: /mnt/bioptic_tree
 
             volumes:
               - name: data
@@ -186,3 +188,6 @@ spec:
               - name: projects
                 persistentVolumeClaim:
                   claimName: projects-rw
+              - name: bioptic-tree
+                persistentVolumeClaim:
+                  claimName: bioptictree-ro

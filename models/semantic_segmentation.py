@@ -44,7 +44,7 @@ class SemanticSegmentation:
         provider = getattr(importlib.import_module(module_path), attr_name)
         self.session = ort.InferenceSession(
             provider(**config["model"]),
-            providers=["CPUExecutionProvider"],
+            providers=["CPUExecutionProvider", "CUDAExecutionProvider"],
             session_options=sess_options,
         )
         self.input_name = self.session.get_inputs()[0].name
