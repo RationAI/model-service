@@ -12,7 +12,6 @@ class Config(TypedDict):
     model: dict[str, Any]
     max_batch_size: int
     batch_wait_timeout_s: float
-    intra_op_num_threads: int
 
 
 fastapi = FastAPI()
@@ -36,16 +35,35 @@ class SemanticSegmentation:
         self.tile_size = config["tile_size"]
         self.mpp = config["mpp"]
 
-        sess_options = ort.SessionOptions()
-        sess_options.intra_op_num_threads = config["intra_op_num_threads"]
-        sess_options.inter_op_num_threads = 1
-
         module_path, attr_name = config["model"].pop("_target_").split(":")
         provider = getattr(importlib.import_module(module_path), attr_name)
+
+        min_shape = f"input:1x3x{self.tile_size}x{self.tile_size}"
+        opt_shape = (
+            f"input:{config['max_batch_size']}x3x{self.tile_size}x{self.tile_size}"
+        )
+        max_shape = (
+            f"input:{config['max_batch_size']}x3x{self.tile_size}x{self.tile_size}"
+        )
+        providers = [
+            (
+                "TensorrtExecutionProvider",
+                {
+                    "device_id": 0,
+                    "trt_fp16_enable": True,
+                    "trt_engine_cache_enable": True,
+                    "trt_engine_cache_path": "./trt_cache",
+                    "trt_profile_min_shapes": min_shape,
+                    "trt_profile_max_shapes": max_shape,
+                    "trt_profile_opt_shapes": opt_shape,
+                },
+            ),
+            "CUDAExecutionProvider",
+            "CPUExecutionProvider",
+        ]
+
         self.session = ort.InferenceSession(
-            provider(**config["model"]),
-            providers=["CPUExecutionProvider", "CUDAExecutionProvider"],
-            session_options=sess_options,
+            provider(**config["model"]), providers=providers
         )
         self.input_name = self.session.get_inputs()[0].name
         self.output_name = self.session.get_outputs()[0].name
@@ -54,10 +72,7 @@ class SemanticSegmentation:
         self.predict.set_batch_wait_timeout_s(config["batch_wait_timeout_s"])  # type: ignore[attr-defined]
 
     def get_config(self) -> dict[str, Any]:
-        return {
-            "tile_size": self.tile_size,
-            "mpp": self.mpp,
-        }
+        return {"tile_size": self.tile_size, "mpp": self.mpp}
 
     @serve.batch
     async def predict(
