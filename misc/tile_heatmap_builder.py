@@ -38,6 +38,7 @@ class TileHeatmapBuilder:
         self.image[y : y + mm_y, x : x + mm_x] += tile[:mm_y, :mm_x]
         self.count[y : y + mm_y, x : x + mm_x] += 1
 
+    def flush(self) -> None:
         self.image.flush()
         self.count.flush()
 
