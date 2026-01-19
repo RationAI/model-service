@@ -58,7 +58,7 @@ Model Service is designed for:
 
 ### Get Started
 
-- [**Quick Start**](get-started/quick-start.md): Deploy the reference empty model in minutes.
+- [**Quick Start**](get-started/quick-start.md): Deploy the reference model in minutes.
 
 ### Guides
 

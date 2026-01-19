@@ -13,7 +13,7 @@ There are two main places a request can wait:
 
 When a request arrives at the HTTP Proxy (or via a Deployment Handle), it is routed to a logical deployment. If all specific replicas are busy, the request waits in a queue managed by the proxy/handle.
 
-- **Config**: `max_queued_requests` (in `deployment_config`)
+- **Config**: `max_queued_requests` (in the deployment spec)
 - **Behavior**:
   - Controls the maximum number of requests allowed to wait for assignment.
   - If the queue is full, new requests are immediately rejected with a **503 Service Unavailable** error (or a `BackpressureError` in Python).
@@ -26,7 +26,7 @@ Without a limit, a system under heavy load might accept requests until it runs o
 
 Once a request is assigned to a specific replica, it counts as "ongoing" for that replica.
 
-- **Config**: `max_ongoing_requests` (in `deployment_config`)
+- **Config**: `max_ongoing_requests` (in the deployment spec)
 - **Behavior**:
   - Limits how many concurrent requests a single replica can process _or_ have buffered.
   - If a replica is at its limit, the proxy considers it "busy" and will not assign new requests to it (they will wait in the Proxy Queue instead).

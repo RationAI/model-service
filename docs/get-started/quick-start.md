@@ -66,7 +66,7 @@ If the RayService is not becoming ready, inspect events and status:
 kubectl describe rayservice rayservice-models -n [namespace]
 ```
 
-## Step 5: Local Access the Service
+## Step 5: Access the Service Locally
 
 Once deployed, you can port-forward the service to access it locally:
 
@@ -75,7 +75,7 @@ Once deployed, you can port-forward the service to access it locally:
 kubectl port-forward -n [namespace] svc/rayservice-models-serve-svc 8000:8000
 ```
 
-## Step 6: Delete the Deployed Model
+## Step 6: Delete the Deployment
 
 To delete the deployed RayService, run:
 

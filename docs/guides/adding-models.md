@@ -30,8 +30,13 @@ class MyModel:
     async def __call__(self, request: Request):
         # Handle inference requests
         data = await request.json()
-        # Process data and return prediction
-        return {"prediction": result}
+    # Process data and return prediction
+    result = self.predict(data)
+    return {"prediction": result}
+
+  def predict(self, data: dict):
+    # Replace with your own inference logic
+    return data
 
 app = MyModel.bind()
 ```
@@ -113,7 +118,7 @@ class ConfigurableModel:
     def __init__(self):
         self.model = load_model()
 
-    async def reconfigure(self, config: Config):
+  def reconfigure(self, config: Config):
         self.threshold = config["threshold"]
         self.batch_size = config["batch_size"]
         print(f"Reconfigured: threshold={self.threshold}")

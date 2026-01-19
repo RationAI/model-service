@@ -36,7 +36,7 @@ class MyModel:
     async def __call__(self, request: Request):
         # Inference logic
         data = await request.json()
-        result = self.model.predict(data["input"])
+      result = self.model.predict(data["input"])  # replace with your own inference call
         return {"prediction": result}
 
 app = MyModel.bind()
@@ -229,7 +229,7 @@ autoscaling_config:
 3.  **`downscale_delay_s`**:
     - Keep this high (e.g., `600s`) to avoid "thrashing". It is cheaper to keep an idle replica for 10 minutes than to re-initialize a heavy model (loading weights, etc.) every time traffic dips for a minute.
 
-For the exact formulas and definitions of these settings, see the [Configuration Reference](configuration-reference.md#2-autoscaling-configuration).
+For the exact formulas and definitions of these settings, see the [Configuration Reference](configuration-reference.md#22-autoscaling-settings-what-they-actually-mean).
 
 ### High Availability
 
@@ -430,7 +430,7 @@ kubectl port-forward -n [namespace] svc/rayservice-my-model-head-svc 8265:8265
 4. **Resource Limits**: Always set limits to prevent resource hogging
 5. **Gradual Rollout**: Update replicas gradually
 6. **Documentation**: Document custom configurations
-7. **Backup**: Keep backup of working configurations
+7. **Backup**: Keep backups of working configurations
 
 ## Next Steps
 
