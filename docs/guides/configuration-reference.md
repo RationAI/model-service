@@ -41,7 +41,7 @@ serveConfigV2: |
 - `name`: logical app name (used in Ray dashboard/logs).
 - `import_path`: Python entrypoint (`module.path:variable`).
 - `route_prefix`: HTTP path under the Serve gateway.
-- `runtime_env`: code location + extra Python deps.
+- `runtime_env`: dynamic environment setup (see [Managing Dependencies](../guides/adding-models.md#6-managing-dependencies)).
 
 ### Deployments (scaling + resources)
 
@@ -65,6 +65,70 @@ deployments:
 - `autoscaling_config`: how many replicas and when to scale.
 - `ray_actor_options`: per‑replica CPU/GPU/memory.
 - `user_config`: free‑form dict passed to `reconfigure()` in your model.
+
+## 2.1 Backpressure and queueing settings (very important)
+
+These two knobs often get confused because they both “limit load”, but they act at different points in the request path.
+
+### `max_ongoing_requests` (replica-side concurrency)
+
+**What it is:** the maximum number of in-flight requests a _single replica_ is allowed to have at once.
+
+**What it controls:** per-replica concurrency and memory pressure.
+
+**What happens when exceeded:** requests should not be dispatched onto that replica; they must wait upstream (typically in the caller-side queue).
+
+### `max_queued_requests` (caller-side queue limit)
+
+**What it is:** the maximum number of requests that are allowed to wait in the caller-side queue _before_ a replica slot is available.
+
+**Where that queue lives:** in the component that is calling the deployment (commonly the HTTP Proxy when handling HTTP ingress).
+
+**What happens when exceeded:** requests are rejected (client-visible overload/backpressure).
+
+### Why the difference matters
+
+- `max_ongoing_requests` protects the replica from being overloaded.
+- `max_queued_requests` decides whether you prefer waiting or rejecting during spikes.
+
+See: [Queues and Backpressure](../architecture/queues-and-backpressure.md).
+
+## 2.2 Autoscaling settings (what they actually mean)
+
+### `target_ongoing_requests`
+
+**What it is:** The desired average number of **ongoing (in-flight)** requests per replica. This is the **primary scaling driver**.
+
+**Formula:**
+$$ \text{Desired Replicas} = \left\lceil \frac{\text{Total Ongoing Requests}}{\text{target\_ongoing\_requests}} \right\rceil $$
+
+**Note:** "Total Ongoing Requests" refers to the **concurrency** (number of requests currently being processed or waiting in the queue), _not_ the Requests Per Second (RPS).
+
+**Example:**
+If your system receives 100 **concurrent** requests and `target_ongoing_requests` is set to 20, Serve will scale to 5 replicas.
+
+**How it influences scaling:**
+
+- **Lower value**: Scales up _earlier_. Use for latency-sensitive models or heavy tasks.
+- **Higher value**: Scales up _later_. Use for high-throughput models where a single replica can handle many concurrent requests.
+
+**Important interaction:** if you set `max_queued_requests` too low, requests may get rejected before ongoing requests rise enough for autoscaling to catch up.
+
+### `min_replicas` / `max_replicas`
+
+Hard bounds on how many replicas Serve is allowed to run for that deployment.
+
+- **Scale to Zero**: Set `min_replicas: 0` to allow the deployment to stop all replicas when idle. The first request will trigger a "cold start" (latency spike).
+- **High Availability**: Set `min_replicas: 2` (or more) to ensure at least two copies are always running, even if idle.
+
+### `upscale_delay_s` / `downscale_delay_s`
+
+Rules for how quickly the autoscaler reacts to load changes.
+
+- **`upscale_delay_s`**: The "patience" period before scaling up. The autoscaler sees high load, but waits this many seconds to confirm the spike is real before launching new replicas.
+  - _Risk_: Setting this too high makes the system sluggish to react to bursts.
+- **`downscale_delay_s`**: The "grace period" before scaling down. Even if load drops to zero, the autoscaler keeps replicas alive for this duration.
+  - _Recommendation_: Keep this high to avoid "thrashing" (rapidly creating/destroying replicas) during short pauses in traffic.
 
 ## 3. Ray Cluster (Workers and Autoscaling)
 
@@ -99,11 +163,13 @@ rayClusterConfig:
                   memory: "16Gi"
 ```
 
-Focus on:
+**Key Interactions:**
 
-- `rayVersion`: must match images you use.
-- `workerGroupSpecs[*].{replicas,minReplicas,maxReplicas}`: cluster‑level scaling bounds.
-- `resources.requests/limits`: how big each worker pod is.
+1.  **Head Node Isolation**: `rayStartParams: { num-cpus: "0" }` on the head node prevents workloads from scheduling there. The head is reserved for the Control Plane.
+2.  **Worker Sizing**: `resources.requests` defines the physical guarantee. Your Pod must be bigger than your Replica (`ray_actor_options`).
+    - _Physical_: Pod Requests (e.g., 4 CPU)
+    - _Logical_: Model Replica Requirement (e.g., 2 CPU)
+    - _Result_: One Pod can fit 2 Replicas (plus overhead).
 
 ## 4. Security and Placement (Optional but Recommended)
 
