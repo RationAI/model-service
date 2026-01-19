@@ -1,126 +1,72 @@
 # Architecture Overview
 
-This document provides an overview of Model Service's architecture, components, and design principles.
+This section provides a structured overview of Model Service's architecture.
+
+If you are new to the project, start here and then follow the links to the deeper pages.
 
 ## System Architecture
 
-Model Service is built on a multi-layered architecture:
+Model Service is built on Kubernetes + KubeRay + Ray Serve:
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    Client Applications                  │
-│           (API Consumers, Web Apps, Notebooks)          │
-└────────────────────┬────────────────────────────────────┘
-                     │ HTTP/HTTPS
-                     ▼
-┌─────────────────────────────────────────────────────────┐
-│                  Kubernetes Service                     │
-│              (Load Balancer / Ingress)                  │
-└────────────────────┬────────────────────────────────────┘
-                     │
-                     ▼
-┌─────────────────────────────────────────────────────────┐
-│                    Ray Serve                            │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐   │
-│  │   Model A    │  │   Model B    │  │   Model C    │   │
-│  │  (Replicas)  │  │  (Replicas)  │  │  (Replicas)  │   │
-│  └──────────────┘  └──────────────┘  └──────────────┘   │
-└────────────────────┬────────────────────────────────────┘
-                     │
-                     ▼
-┌─────────────────────────────────────────────────────────┐
-│                   Ray Cluster                           │
-│  ┌────────────┐  ┌────────────┐  ┌────────────┐         │
-│  │ Head Node  │  │  Worker 1  │  │  Worker 2  │ ...     │
-│  └────────────┘  └────────────┘  └────────────┘         │
-└─────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                           Head Node                              │
+│                                                                  │
+│    ┌──────────────┐                    ┌───────────────────┐     │
+│    │  Controller  │◄───────────────────┤    HTTP Proxy     │◄──── Client Request
+│    │ (Autoscaler) │   Update Config    │     (Ingress)     │     │
+│    └──────┬───────┘                    └─────────┬─────────┘     │
+│           │                                      │               │
+└───────────┼──────────────────────────────────────┼───────────────┘
+            │ Manage                               │ Route
+            ▼                                      ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                         Worker Nodes                             │
+│                                                                  │
+│  ┌────────────────────────────────────────────────────────────┐  │
+│  │                       Application 1                        │  │
+│  │  ┌──────────────────────┐        ┌──────────────────────┐  │  │
+│  │  │     Deployment A     │        │     Deployment B     │  │  │
+│  │  │ ┌────────┐ ┌────────┐│        │ ┌────────┐ ┌────────┐│  │  │
+│  │  │ │Replica │ │Replica ││        │ │Replica │ │Replica ││  │  │
+│  │  │ └────────┘ └────────┘│        │ └────────┘ └────────┘│  │  │
+│  │  └──────────────────────┘        └──────────────────────┘  │  │
+│  └────────────────────────────────────────────────────────────┘  │
+│                                                                  │
+│  ┌────────────────────────────────────────────────────────────┐  │
+│  │                       Application 2                        │  │
+│  │               ...                                          │  │
+│  └────────────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
-## Core Components
+## Core Concepts & Hierarchy
 
-### 1. Ray Cluster
+The client's request flows through several layers of the system:
 
-The foundation of Model Service, providing distributed computing infrastructure.
+HTTP Proxy → Head Node → Worker Node → Application → Deployment → Replica.
 
-**Head Node:**
+The main components are:
 
-- Cluster coordination and management
-- Dashboard for monitoring
-- Scheduling decisions
-- Typically configured with 0 CPU/GPU for user workloads (cluster coordination only)
+1. **Ray Service (The Platform)**: The Kubernetes Custom Resource (CR) that defines the entire Ray cluster and the Serve application(s) running on top of it.
+2. **Ray Cluster**: The physical set of Kubernetes pods, consisting of a **Head Node** and multiple **Worker Nodes**.
+3. **Infrastructure Actors**:
+   - **Controller**: Manages the control plane, API calls, and autoscaling (does not handle requests).
+   - **HTTP Proxy**: Ingress point that routes requests to applications.
+4. **Serve Application (The Service Boundary)**: A standalone version of your code, including all its deployments and logic. Defined by an import path (e.g., `models.binary_classifier:app`).
+5. **Serve Deployment (The Functional Unit)**: A managed group of replicas. It defines scaling rules (`num_replicas`, `num_cpus`) and versioning.
+6. **Replica (The Execution Unit)**: A single Ray actor process running the deployment code inside a Worker Node.
 
-**Worker Nodes:**
+### Serve application vs Serve deployment
 
-- Execute model inference workloads
-- Can be CPU-only or GPU-enabled
-- Auto-scale based on demand
-- Different worker groups for different hardware types
+- **Application**: deployable service boundary (routing, code entrypoint, runtime env).
+- **Deployment**: scaling unit (replicas), concurrency/queue limits, and resource options.
 
-### 2. Ray Serve
+### Internal Mechanisms
 
-Application layer for serving ML models as HTTP endpoints.
+For detailed information on how batching works, including the configuration API and internal buffering mechanisms, see [Batching](batching.md).
 
-**Features:**
-
-- HTTP request routing
-- Load balancing across replicas
-- Request batching
-- Automatic retry and fault tolerance
-- Dynamic model configuration
-
-### 3. KubeRay Operator
-
-Kubernetes operator that manages Ray clusters.
-
-**Responsibilities:**
-
-- Cluster lifecycle management (create, update, delete)
-- Autoscaling worker nodes
-- Health monitoring
-- Configuration reconciliation
-
-### 4. Model Implementations
-
-Your ML models wrapped with Ray Serve decorators.
-
-**Structure:**
-
-```python
-@serve.deployment
-class YourModel:
-    def __init__(self):
-        # Model loading
-
-    async def __call__(self, request):
-        # Inference logic
-```
-
-## Data Flow
-
-### Inference Request Flow
-
-1. **Client Request**: HTTP POST to model endpoint
-2. **Service Routing**: Kubernetes service routes to Ray Serve
-3. **Load Balancing**: Ray Serve distributes to available replica
-4. **Model Processing**: Replica executes inference
-5. **Response**: Result returned to client
-
-```
-Client → K8s Service → Ray Serve Router → Model Replica → Response
-                                       ↓
-                                  (Autoscaler)
-                                       ↓
-                                   Add/Remove
-                                    Replicas
-```
-
-### Model Loading Flow
-
-1. **Initialization**: Ray Serve creates model replica
-2. **Environment Setup**: Install dependencies from runtime_env
-3. **Model Download**: Fetch from MLflow/storage
-4. **Loading**: Initialize model in memory
-5. **Ready**: Replica accepts requests
+For request lifecycle and queueing details, see [Request Lifecycle](request-lifecycle.md) and [Queues and Backpressure](queues-and-backpressure.md).
 
 ## Scaling Architecture
 
@@ -153,124 +99,43 @@ workerGroupSpecs:
     maxReplicas: 4
 ```
 
-**Triggers:**
+### Resource Sizing (Pods vs Replicas)
 
-- Resource pressure (CPU, memory, GPU)
-- Idle timeout (scale to zero)
-- Manual scaling
+It is important to distinguish between **Kubernetes Resources** (Pods) and **Ray Resources** (Replicas).
 
-## Resource Management
+- **Replica Sizing (`ray_actor_options`)**: Defines how much logical resource one model copy needs (e.g., `num_cpus: 1`).
+- **Pod Sizing (`resources.limits`)**: Defines how big the physical container is.
 
-### CPU Resources
+**Rule of Thumb**: Ensure your Pods are large enough to fit at least one (or N) replicas plus overhead (Python runtime, Object Store).
+i.e., `Pod CPU >= Replicas × num_cpus + Overhead`.
 
-```yaml
-ray_actor_options:
-  num_cpus: 6 # CPUs per replica
+## Autoscaling Architecture
 
-containers:
-  resources:
-    requests:
-      cpu: 12 # CPUs per worker pod
-```
+The Ray Serve Autoscaler runs inside the **Controller** actor and manages the number of replicas dynamically.
 
-**Calculation:**
+1. **Metrics Collection**: Replicas and DeploymentHandle push metrics (queue size, active queries) to the Controller.
+2. **Decision Making**: The Autoscaler periodically checks these metrics against targets (like `target_ongoing_requests`).
+3. **Scaling Action**: The Controller adds or removes Replica actors to meet demand.
 
-- Worker pod CPUs ≥ (replicas × num_cpus)
-- Leave headroom for system processes
+## Fault Tolerance
 
-### Memory Resources
+Ray Serve is designed to be resilient to failures:
 
-```yaml
-ray_actor_options:
-  memory: 5368709120 # 5 GiB per replica
+- **Replica Failure**: If a Replica actor crashes, the Controller detects it and starts a new one to replace it. Request routing automatically updates.
+- **Proxy Failure**: If the Proxy actor fails, the Controller restarts it.
+- **Controller Failure**: If the Controller itself fails, Ray (via GCS) restarts it. Autoscaling pauses during downtime but resumes upon recovery.
+- **Node Failure**: KubeRay (managing the cluster) detects node failures and provisions new pods. Ray Serve then eventually schedules actors on the new nodes.
 
-containers:
-  resources:
-    limits:
-      memory: 10Gi # Memory per worker pod
-```
+## Design Principles
 
-### GPU Resources
+1. **Declarative Configuration**: Infrastructure defined in YAML, managed by GitOps (`RayService` CR).
+2. **Separation of Concerns**: Model Code (Python), Infrastructure (K8s), Configuration (User Config).
+3. **Elastic Scaling**: Scale to zero when idle, scale up on demand.
+4. **Developer Experience**: Simple model implementation, easy local testing.
 
-```yaml
-ray_actor_options:
-  num_gpus: 1 # GPUs per replica
+## Metrics & Debugging
 
-nodeSelector:
-  nvidia.com/gpu.product: NVIDIA-A40
-
-resources:
-  limits:
-    nvidia.com/gpu: 1 # GPUs per worker pod
-```
-
-## High Availability
-
-### Fault Tolerance
-
-**Ray Cluster:**
-
-- Worker pod failure → Ray reschedules work when possible, KubeRay recreates pods
-- Head pod failure → KubeRay typically restarts the head, but the cluster (and Serve) may be briefly unavailable during recovery
-- In general, expect automatic recovery from many pod-level failures, but not strict “no-downtime” guarantees
-
-**Ray Serve:**
-
-- Replica failure → Requests routed to healthy replicas
-- Failed replicas automatically restarted
-- Graceful shutdown is supported when configured properly, but does not guarantee zero dropped requests.
-
-### Updates and Downtime
-
-RayService updates are reconciled by KubeRay and are designed to minimize downtime, but the exact behavior depends on your Ray/KubeRay versions and the change being applied.
-
-In practice, updates may temporarily run old and new replicas at the same time while shifting traffic to healthy replicas.
-
-```yaml
-spec:
-  serveConfigV2: |
-    applications:
-      - name: my-model-v2  # New version
-        # ... new configuration
-```
-
-## Security
-
-### Pod Security
-
-All pods run with security constraints:
-
-```yaml
-securityContext:
-  runAsNonRoot: true
-  runAsUser: 1000
-  allowPrivilegeEscalation: false
-  capabilities:
-    drop: ["ALL"]
-  seccompProfile:
-    type: RuntimeDefault
-```
-
-### Network Security
-
-- Internal service communication only
-- Ingress controls external access
-- Proxy support for external dependencies
-
-## Monitoring & Observability
-
-### Ray Dashboard
-
-Web UI for cluster monitoring:
-
-- Resource utilization
-- Active tasks
-- Node status
-- Serve deployments
-
-### Kubernetes Monitoring
-
-Standard Kubernetes tools:
+Common commands:
 
 ```bash
 kubectl get pods -n [namespace]
@@ -279,8 +144,6 @@ kubectl logs -n [namespace] <pod-name>
 kubectl describe rayservice <rayservice-name> -n [namespace]
 ```
 
-### Metrics
-
 Ray can export Prometheus metrics (when metrics collection/export is enabled):
 
 - Request latency
@@ -288,44 +151,9 @@ Ray can export Prometheus metrics (when metrics collection/export is enabled):
 - Replica count
 - Resource usage
 
-## Design Principles
-
-### 1. Declarative Configuration
-
-Infrastructure defined in YAML, managed by GitOps:
-
-```yaml
-apiVersion: ray.io/v1
-kind: RayService
-# ... configuration
-```
-
-### 2. Separation of Concerns
-
-- **Model Code**: Python implementation
-- **Infrastructure**: Kubernetes manifests
-- **Configuration**: user_config section
-
-### 3. Elastic Scaling
-
-- Scale to zero when idle
-- Scale up on demand
-- Efficient resource utilization
-
-### 4. Fault Tolerance
-
-- Automatic recovery from failures
-- Ray Head Node is a logical single point of control - failures are recoverable but may cause brief service disruption
-- Graceful degradation
-
-### 5. Developer Experience
-
-- Simple model implementation
-- Easy local testing
-- Fast iteration cycle
-
 ## Next Steps
 
+- [Request lifecycle](request-lifecycle.md)
 - [Deployment guide](../guides/deployment-guide.md)
 - [Configuration reference](../guides/configuration-reference.md)
 - [Adding new models](../guides/adding-models.md)

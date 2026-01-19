@@ -29,6 +29,9 @@ nav:
       - Troubleshooting: guides/troubleshooting.md
   - Architecture:
       - Overview: architecture/overview.md
+      - Request Lifecycle: architecture/request-lifecycle.md
+      - Batching: architecture/batching.md
+      - Queues and Backpressure: architecture/queues-and-backpressure.md
 
 markdown_extensions:
   - admonition
