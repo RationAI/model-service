@@ -76,6 +76,39 @@ deployments:
         pip: ["onnxruntime>=1.23.2", "mlflow<3.0", "lz4>=4.4.5"]
 ```
 
+## Worker Crashes (OOMKilled)
+
+### Symptoms
+
+- Pods in `kubectl get pods` show status `OOMKilled` or high restart counts.
+- `kubectl describe pod ...` shows "Last State: Terminated (Reason: OOMKilled)".
+- Ray Dashboard shows unexpected actor deaths.
+
+### Causes
+
+- The model loaded into memory + the input batch size exceeds the container's memory limit.
+- **Physical vs Logical Mismatch**: Ray was told the actor needs 2GB, so it scheduled it on a node, but the actual Python process used 4GB, causing Kubernetes to kill it.
+
+### Fix
+
+You must increase **both** the Ray logical allocation and the Kubernetes physical limit.
+
+1. Increase `ray_actor_options.memory` (Software limit):
+
+   ```yaml
+   ray_actor_options:
+     memory: 4294967296 # 4 GiB
+   ```
+
+2. Increase Kubernetes container limits (Hardware limit):
+   Ensure the `workerGroupSpecs` in `ray-service.yaml` provides **more** memory than the sum of all actors on that node plus overhead (~30%).
+
+   ```yaml
+   resources:
+     limits:
+       memory: "6Gi" # Must cover the 4GB actor + Ray overhead
+   ```
+
 ## Autoscaling Not Working (Replicas Don’t Change)
 
 ### Serve replicas not scaling
@@ -116,8 +149,14 @@ Also ensure `workerGroupSpecs[*].minReplicas/maxReplicas` allow scaling.
 
 ### Fix
 
-- Reduce per-replica requirements (`ray_actor_options.num_cpus`, `memory`).
-- Increase cluster capacity or adjust worker pod resources.
+1.  **Check Physical vs Logical**:
+
+    - _Physical_: Can K8s schedule the pod? `kubectl describe pod` will show if nodes are full.
+    - _Logical_: Can Ray schedule the actor? Check `ray status` or the dashboard. Ray might say "0/X CPUs available" even if the pod exists, because other actors consumed the slots.
+
+2.  **Adjust Resources**:
+    - Reduce per-replica requirements (`ray_actor_options.num_cpus`, `memory`).
+    - Increase cluster capacity (maxReplicas) or per-worker limits.
 
 Inspect pod scheduling events:
 
