@@ -58,10 +58,12 @@ class MyModel:
 
 #### 2. Initialization
 
-Load your model in `__init__`:
+Load your model in `__init__`. This method corresponds to the replica **startup phase**.
 
 ```python
 def __init__(self):
+    # This runs ONCE when the replica starts.
+    # The replica is NOT ready for traffic until this returns.
     import torch
 
     self.model = torch.load("model.pt")
@@ -69,7 +71,16 @@ def __init__(self):
     print("Model loaded successfully")
 ```
 
-#### 3. Inference Method
+#### 3. Resource Packing (Fractional CPUs/GPUs)
+
+Ray allows fractional resource requests. This lets you pack multiple small replicas onto a single node.
+
+```python
+# Run 4 replicas on a single 1-CPU node (0.25 * 4 = 1.0)
+@serve.deployment(ray_actor_options={"num_cpus": 0.25})
+```
+
+#### 4. Inference Method
 
 Implement `__call__` or other methods for handling requests:
 
