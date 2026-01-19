@@ -36,7 +36,7 @@ class MyModel:
     async def __call__(self, request: Request):
         # Inference logic
         data = await request.json()
-      result = self.model.predict(data["input"])  # replace with your own inference call
+        result = self.model.predict(data["input"])  # replace with your own inference call
         return {"prediction": result}
 
 app = MyModel.bind()
@@ -169,11 +169,47 @@ Ray scheduling relies on **Logical Resources**, while Kubernetes manages **Physi
 Defined in your code via `ray_actor_options`. These are abstract "slots" used for scheduling.
 
 - `num_cpus: 4`: The actor needs 4 slots to run.
-- `memory: 4Gi`: The actor needs 4Gi of _tracked_ heap/object store memory.
+- `memory: 4294967296` (bytes): Ray logical memory resource used for scheduling/admission control.
+
+Example (Python):
+
+```python
+from ray import serve
+
+@serve.deployment(
+  ray_actor_options={
+    "num_cpus": 4,
+    "memory": 4 * 1024**3,  # bytes (4 GiB)
+  }
+)
+class MyModel:
+  ...
+
+app = MyModel.bind()
+```
 
 #### 2. Physical Resources (What Kubernetes gives)
 
 Defined in `ray-service.yaml` under `workerGroupSpecs`. This is the actual container capacity.
+
+Example (Kubernetes YAML):
+
+```yaml
+workerGroupSpecs:
+  - groupName: cpu-workers
+    replicas: 1
+    template:
+      spec:
+        containers:
+          - name: ray-worker
+            resources:
+              requests:
+                cpu: 8
+                memory: 16Gi
+              limits:
+                cpu: 12
+                memory: 20Gi
+```
 
 #### 3. The "Overhead" Gap
 
