@@ -1,15 +1,13 @@
 from typing import Any, TypedDict
 
 import numpy as np
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from numpy.typing import NDArray
 from ray import serve
 
 
 class Config(TypedDict):
     tile_size: int
-    mean: list[float]
-    std: list[float]
     model: dict[str, Any]
     max_batch_size: int
     batch_wait_timeout_s: float
@@ -21,13 +19,13 @@ fastapi = FastAPI()
 
 @serve.deployment(num_replicas="auto")
 @serve.ingress(fastapi)
-class BinaryClassifier:
+class SemanticSegmentation:
     tile_size: int
 
     def __init__(self) -> None:
         import lz4.frame
 
-        self.decompress = lz4.frame.decompress
+        self.lz4 = lz4.frame
 
     async def reconfigure(self, config: Config) -> None:
         import importlib
@@ -35,9 +33,6 @@ class BinaryClassifier:
         import onnxruntime as ort
 
         self.tile_size = config["tile_size"]
-
-        self.mean = np.array(config["mean"], dtype=np.float32).reshape(1, 3, 1, 1)
-        self.inv_std = 1 / np.array(config["std"], dtype=np.float32).reshape(1, 3, 1, 1)
 
         sess_options = ort.SessionOptions()
         sess_options.intra_op_num_threads = config["intra_op_num_threads"]
@@ -57,25 +52,23 @@ class BinaryClassifier:
         self.predict.set_batch_wait_timeout_s(config["batch_wait_timeout_s"])
 
     @serve.batch
-    async def predict(self, images: list[NDArray[np.uint8]]) -> list[float]:
-        batch = np.stack(images, axis=0).astype(np.float32)
-
-        # Normalization
-        batch -= self.mean
-        batch *= self.inv_std
-
+    async def predict(self, images: list[NDArray[np.uint8]]) -> list[bytes]:
+        batch = np.stack(images, axis=0)
         outputs = self.session.run([self.output_name], {self.input_name: batch})
 
-        return outputs[0].squeeze(1).tolist()
+        return [mask.tobytes() for mask in outputs[0].astype(np.float16)]
 
     @fastapi.post("/")
-    async def root(self, request: Request) -> float:
-        data = self.decompress(await request.body())
+    async def root(self, request: Request) -> Response:
+        data = self.lz4.decompress(await request.body())
         image = np.frombuffer(data, dtype=np.uint8).reshape(
             self.tile_size, self.tile_size, 3
         )
 
-        return await self.predict(image.transpose(2, 0, 1))
+        return Response(
+            content=self.lz4.compress(await self.predict(image.transpose(2, 0, 1))),
+            media_type="application/octet-stream",
+        )
 
 
-app = BinaryClassifier.bind()
+app = SemanticSegmentation.bind()

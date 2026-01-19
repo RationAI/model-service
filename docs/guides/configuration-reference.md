@@ -100,7 +100,7 @@ See: [Queues and Backpressure](../architecture/queues-and-backpressure.md).
 **What it is:** The desired average number of **ongoing (in-flight)** requests per replica. This is the **primary scaling driver**.
 
 **Formula:**
-$$ \text{Desired Replicas} = \left\lceil \frac{\text{Total Ongoing Requests}}{\text{target\_ongoing\_requests}} \right\rceil $$
+$$ \text{Desired Replicas} = \left\lceil \frac{\text{Total Ongoing Requests}}{\text{target_ongoing_requests}} \right\rceil $$
 
 **Note:** "Total Ongoing Requests" refers to the **concurrency** (number of requests currently being processed or waiting in the queue), _not_ the Requests Per Second (RPS).
 
