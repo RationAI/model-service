@@ -13,11 +13,11 @@ Requests only become eligible for batching after they:
 1. enter through the proxy and handle queueing/backpressure, and
 2. get routed to a specific replica
 
-See also: [Request lifecycle](request-lifecycle.md).
+See also: **[Request lifecycle](request-lifecycle.md)**.
 
 ## The API surface (what you configure)
 
-In user code, batching is enabled by decorating an async method with `@serve.batch`:
+In user code, batching is enabled by decorating an **async** method with `@serve.batch`:
 
 - `max_batch_size`: upper bound for how many requests are grouped into one batch execution
 - `batch_wait_timeout_s`: maximum time to wait (since the first queued item) before flushing a smaller batch

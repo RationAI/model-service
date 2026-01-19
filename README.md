@@ -18,6 +18,9 @@ This repository contains:
   - `docs/guides/configuration-reference.md`
   - `docs/guides/troubleshooting.md`
   - `docs/architecture/overview.md`
+  - `docs/architecture/request-lifecycle.md`
+  - `docs/architecture/queues-and-backpressure.md`
+  - `docs/architecture/batching.md`
 
 ## Quick Start (Kubernetes)
 
