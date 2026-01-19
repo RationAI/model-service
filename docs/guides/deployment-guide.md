@@ -218,10 +218,12 @@ autoscaling_config:
 **Key Tuning Recommendations:**
 
 1.  **`target_ongoing_requests`**:
+
     - **Lower this value** (e.g., 5-10) for latency-sensitive models or if your model is CPU-heavy. This forces the system to scale out sooner.
     - **Increase this value** (e.g., 50-100) for simple models where a single replica can juggle many async requests.
 
 2.  **`upscale_delay_s`**:
+
     - Keep this low (e.g., `0s` to `30s`) so the system reacts quickly to traffic spikes.
 
 3.  **`downscale_delay_s`**:
