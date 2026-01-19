@@ -160,34 +160,45 @@ The example model in this repository (`models/binary_classifier.py`) uses FastAP
 
 ## Production Considerations
 
-### Resource Planning
+### Resource Planning (Logical vs. Physical)
 
-**Calculate resource requirements:**
+Ray scheduling relies on **Logical Resources**, while Kubernetes manages **Physical Resources**. Confusion between them is the #1 cause of "Pending" pods.
 
-1. **Per-replica resources:**
+#### 1. Logical Resources (What Ray sees)
 
-   - CPU: Based on model complexity
-   - Memory: Model size + working memory + overhead
-   - GPU: Number of GPUs needed
+Defined in your code via `ray_actor_options`. These are abstract "slots" used for scheduling.
 
-2. **Total cluster resources:**
+- `num_cpus: 4`: The actor needs 4 slots to run.
+- `memory: 4Gi`: The actor needs 4Gi of _tracked_ heap/object store memory.
 
-   ```
-   Total CPUs = max_replicas × num_cpus + overhead
-   Total Memory = max_replicas × memory + overhead
-   ```
+#### 2. Physical Resources (What Kubernetes gives)
 
-3. **Example calculation:**
+Defined in `ray-service.yaml` under `workerGroupSpecs`. This is the actual container capacity.
 
-   ```
-   Model: 4 CPU, 4GB per replica
-   Max replicas: 5
+#### 3. The "Overhead" Gap
 
-   Required per worker: 5 × 4 = 20 CPUs, 5 × 4GB = 20GB
-   Overhead: +2 CPUs, +4GB for system
+Ray system processes (Raylet, Dashboard Agent, Plasma Store) consume physical CPU and Memory that is **not** accounted for in logical slots.
 
-   Worker resources: 22 CPUs, 24GB memory
-   ```
+**Formula for Worker Pod Sizing:**
+
+```text
+Physical Request >= (Sum of Replicas × Logical Request) + System Overhead
+```
+
+**Recommended Overhead Buffer:**
+
+- **CPU**: Add 0.5 - 2 CPU cores per pod for Ray system processes.
+- **Memory**: Add 1-2 GiB + 30% of object store size.
+
+#### Example Calculation
+
+**Scenario:** Deploy 5 replicas of a model requiring 4 CPUs and 4GB RAM on a single node.
+
+1.  **Logical Needs**: 5 replicas × 4 CPUs = **20 Logical CPUs**.
+2.  **Physical Overhead**: We estimate 2 CPUs for Raylet/System.
+3.  **Total Physical Request**: 20 + 2 = **22 CPUs**.
+
+_If you request only 20 CPUs in Kubernetes, Ray will detect that some CPU is used by the OS/Raylet and might only offer 19 logical slots, causing the 5th replica to hang._
 
 ### Autoscaling Configuration
 
@@ -195,21 +206,28 @@ The example model in this repository (`models/binary_classifier.py`) uses FastAP
 
 ```yaml
 autoscaling_config:
-  min_replicas: 1 # Always keep 1 running
-  max_replicas: 10 # Scale up to 10
-  target_ongoing_requests: 20 # Target load per replica
+  min_replicas: 1
+  max_replicas: 10
+  target_ongoing_requests: 20
 
-  # Advanced options
-  upscale_delay_s: 30 # Wait 30s before scaling up
-  downscale_delay_s: 600 # Wait 10m before scaling down
+  # Advanced stabilization
+  upscale_delay_s: 30
+  downscale_delay_s: 600
 ```
 
-**Scaling behavior:**
+**Key Tuning Recommendations:**
 
-- **Cold start**: Set `min_replicas: 0` for scale-to-zero
-- **Always available**: Set `min_replicas: 1` or higher
-- **High traffic**: Increase `max_replicas` and `target_ongoing_requests`
-- **Batch processing**: Use higher `target_ongoing_requests`
+1.  **`target_ongoing_requests`**:
+    - **Lower this value** (e.g., 5-10) for latency-sensitive models or if your model is CPU-heavy. This forces the system to scale out sooner.
+    - **Increase this value** (e.g., 50-100) for simple models where a single replica can juggle many async requests.
+
+2.  **`upscale_delay_s`**:
+    - Keep this low (e.g., `0s` to `30s`) so the system reacts quickly to traffic spikes.
+
+3.  **`downscale_delay_s`**:
+    - Keep this high (e.g., `600s`) to avoid "thrashing". It is cheaper to keep an idle replica for 10 minutes than to re-initialize a heavy model (loading weights, etc.) every time traffic dips for a minute.
+
+For the exact formulas and definitions of these settings, see the [Configuration Reference](configuration-reference.md#2-autoscaling-configuration).
 
 ### High Availability
 
@@ -249,12 +267,8 @@ containers:
 
 ```yaml
 env:
-  - name: HTTP_PROXY
-    value: "http://proxy.example.com:3128"
   - name: HTTPS_PROXY
     value: "http://proxy.example.com:3128"
-  - name: NO_PROXY
-    value: ".svc.cluster.local,.cluster.local"
 ```
 
 **Service configuration:**
