@@ -8,8 +8,6 @@ from ray import serve
 
 class Config(TypedDict):
     tile_size: int
-    mean: list[float]
-    std: list[float]
     model: dict[str, Any]
     max_batch_size: int
     batch_wait_timeout_s: float
@@ -27,7 +25,7 @@ class BinaryClassifier:
     def __init__(self) -> None:
         import lz4.frame
 
-        self.decompress = lz4.frame.decompress
+        self.lz4 = lz4.frame
 
     async def reconfigure(self, config: Config) -> None:
         import importlib
@@ -35,9 +33,6 @@ class BinaryClassifier:
         import onnxruntime as ort
 
         self.tile_size = config["tile_size"]
-
-        self.mean = np.array(config["mean"], dtype=np.float32).reshape(1, 3, 1, 1)
-        self.inv_std = 1 / np.array(config["std"], dtype=np.float32).reshape(1, 3, 1, 1)
 
         sess_options = ort.SessionOptions()
         sess_options.intra_op_num_threads = config["intra_op_num_threads"]
@@ -47,7 +42,11 @@ class BinaryClassifier:
         provider = getattr(importlib.import_module(module_path), attr_name)
         self.session = ort.InferenceSession(
             provider(**config["model"]),
-            providers=["CPUExecutionProvider"],
+            providers=[
+                "TensorrtExecutionProvider",
+                "CUDAExecutionProvider",
+                "CPUExecutionProvider",
+            ],
             session_options=sess_options,
         )
         self.input_name = self.session.get_inputs()[0].name
@@ -58,19 +57,14 @@ class BinaryClassifier:
 
     @serve.batch
     async def predict(self, images: list[NDArray[np.uint8]]) -> list[float]:
-        batch = np.stack(images, axis=0).astype(np.float32)
-
-        # Normalization
-        batch -= self.mean
-        batch *= self.inv_std
-
+        batch = np.stack(images, axis=0).astype(np.uint8)
         outputs = self.session.run([self.output_name], {self.input_name: batch})
 
         return outputs[0].squeeze(1).tolist()
 
     @fastapi.post("/")
     async def root(self, request: Request) -> float:
-        data = self.decompress(await request.body())
+        data = self.lz4.decompress(await request.body())
         image = np.frombuffer(data, dtype=np.uint8).reshape(
             self.tile_size, self.tile_size, 3
         )
