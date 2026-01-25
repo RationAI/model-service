@@ -29,8 +29,11 @@ class BinaryClassifier:
 
     async def reconfigure(self, config: Config) -> None:
         import importlib
+        import logging
 
         import onnxruntime as ort
+
+        logger = logging.getLogger("ray.serve")
 
         self.tile_size = config["tile_size"]
 
@@ -49,6 +52,12 @@ class BinaryClassifier:
             ],
             session_options=sess_options,
         )
+
+        # Log which provider is actually being used
+        active_provider = self.session.get_providers()[0]
+        logger.info(f"BinaryClassifier using ExecutionProvider: {active_provider}")
+        logger.info(f"Available providers: {self.session.get_providers()}")
+
         self.input_name = self.session.get_inputs()[0].name
         self.output_name = self.session.get_outputs()[0].name
 
