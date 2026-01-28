@@ -30,6 +30,7 @@ class BinaryClassifier:
         import lz4.frame
 
         self.lz4 = lz4.frame
+        self.handle = serve.get_deployment_handle("BinaryClassifier")
 
     async def reconfigure(self, config: Config) -> None:
         """Load the ONNX model and configure inference settings."""
@@ -75,6 +76,8 @@ class BinaryClassifier:
     @serve.batch
     async def predict(self, images: list[NDArray[np.uint8]]) -> list[float]:
         """Run inference on a batch of images."""
+        print("BATCH SIZE:", len(images))
+
         # Stack images into batch and ensure uint8 dtype
         batch = np.stack(images, axis=0).astype(np.uint8)
 
@@ -95,7 +98,7 @@ class BinaryClassifier:
         )
 
         # Transpose to CHW format and run prediction
-        return await self.predict(image.transpose(2, 0, 1))
+        return await self.handle.predict.remote(image.transpose(2, 0, 1))
 
 
 app = BinaryClassifier.bind()  # type: ignore[attr-defined]
