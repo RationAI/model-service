@@ -43,7 +43,7 @@ class BinaryClassifier:
         logger = logging.getLogger("ray.serve")
         self.tile_size = config["tile_size"]
 
-        cache_path = "/tmp/trt_cache"
+        cache_path = "/mnt/cache/trt_cache"
         os.makedirs(cache_path, exist_ok=True)
 
         trt_options = {
@@ -57,6 +57,8 @@ class BinaryClassifier:
         # Configure ONNX Runtime session
         sess_options = ort.SessionOptions()
         sess_options.intra_op_num_threads = config["intra_op_num_threads"]
+        sess_options.inter_op_num_threads = 1
+
         # Load model from provider (e.g., MLflow)
         module_path, attr_name = config["model"].pop("_target_").split(":")
         provider = getattr(importlib.import_module(module_path), attr_name)
