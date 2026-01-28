@@ -54,17 +54,6 @@ class BinaryClassifier:
             "trt_max_workspace_size": 4294967296,  # 4GB
         }
 
-        logger.info("Pre-warming TensorRT engines...")
-        for batch_size in [1, 2, 4, 8, 16, 32]:
-            dummy = np.zeros(
-                (batch_size, 3, self.tile_size, self.tile_size),
-                dtype=np.uint8,
-            )
-            _ = self.session.run([self.output_name], {self.input_name: dummy})
-            logger.info(f"✓ Warmed batch_size={batch_size}")
-
-        logger.info("TensorRT warm-up complete!")
-
         # Configure ONNX Runtime session
         sess_options = ort.SessionOptions()
         sess_options.intra_op_num_threads = config["intra_op_num_threads"]
@@ -98,12 +87,16 @@ class BinaryClassifier:
         self.predict.set_max_batch_size(config["max_batch_size"])  # type: ignore[attr-defined]
         self.predict.set_batch_wait_timeout_s(config["batch_wait_timeout_s"])  # type: ignore[attr-defined]
 
-        logger.info("Starting TensorRT warm-up...")
-        dummy_batch = np.zeros(
-            (config["max_batch_size"], 3, self.tile_size, self.tile_size),
-            dtype=np.uint8,
-        )
-        self.session.run([self.output_name], {self.input_name: dummy_batch})
+        logger.info("Pre-warming TensorRT engines...")
+        for batch_size in [1, 2, 4, 8, 16, 32]:
+            dummy = np.zeros(
+                (batch_size, 3, self.tile_size, self.tile_size),
+                dtype=np.uint8,
+            )
+            _ = self.session.run([self.output_name], {self.input_name: dummy})
+            logger.info(f"✓ Warmed batch_size={batch_size}")
+
+        logger.info("TensorRT warm-up complete!")
 
     @serve.batch
     async def predict(self, images: list[NDArray[np.uint8]]) -> list[float]:
