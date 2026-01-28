@@ -1,3 +1,4 @@
+import asyncio
 import os
 from typing import Any, TypedDict
 
@@ -20,7 +21,10 @@ class Config(TypedDict):
 fastapi = FastAPI()
 
 
-@serve.deployment(num_replicas="auto", ray_actor_options={"num_gpus": 1})
+@serve.deployment(
+    num_replicas="auto",
+    ray_actor_options={"num_gpus": 1},
+)
 @serve.ingress(fastapi)
 class BinaryClassifier:
     """Binary classifier for tissue tiles using ONNX Runtime with GPU support."""
@@ -31,7 +35,6 @@ class BinaryClassifier:
         import lz4.frame
 
         self.lz4 = lz4.frame
-        self.handle = serve.get_deployment_handle("BinaryClassifier")
 
     async def reconfigure(self, config: Config) -> None:
         """Load the ONNX model and configure inference settings."""
@@ -51,12 +54,11 @@ class BinaryClassifier:
             "trt_fp16_enable": True,
             "trt_engine_cache_enable": True,
             "trt_engine_cache_path": cache_path,
-            "trt_max_workspace_size": 4294967296,  # 4GB
         }
 
         # Configure ONNX Runtime session
         sess_options = ort.SessionOptions()
-        sess_options.intra_op_num_threads = config["intra_op_num_threads"]
+        sess_options.intra_op_num_threads = 1
         sess_options.inter_op_num_threads = 1
 
         # Load model from provider (e.g., MLflow)
@@ -87,17 +89,6 @@ class BinaryClassifier:
         self.predict.set_max_batch_size(config["max_batch_size"])  # type: ignore[attr-defined]
         self.predict.set_batch_wait_timeout_s(config["batch_wait_timeout_s"])  # type: ignore[attr-defined]
 
-        logger.info("Pre-warming TensorRT engines...")
-        for batch_size in [1, 2, 4, 8, 16, 32]:
-            dummy = np.zeros(
-                (batch_size, 3, self.tile_size, self.tile_size),
-                dtype=np.uint8,
-            )
-            _ = self.session.run([self.output_name], {self.input_name: dummy})
-            logger.info(f"✓ Warmed batch_size={batch_size}")
-
-        logger.info("TensorRT warm-up complete!")
-
     @serve.batch
     async def predict(self, images: list[NDArray[np.uint8]]) -> list[float]:
         """Run inference on a batch of images."""
@@ -114,7 +105,7 @@ class BinaryClassifier:
     @fastapi.post("/")
     async def root(self, request: Request) -> float:
         """Handle inference request with LZ4-compressed image."""
-        data = self.lz4.decompress(await request.body())
+        data = await asyncio.to_thread(self.lz4.decompress, await request.body())
 
         # Convert and Transpose (HWC -> CHW)
         image = (
@@ -126,7 +117,7 @@ class BinaryClassifier:
         # Use ascontiguousarray to ensure the memory layout is optimal for the GPU
         image = np.ascontiguousarray(image)
 
-        return await self.handle.predict.remote(image)
+        return await self.predict(image)
 
 
 app = BinaryClassifier.bind()  # type: ignore[attr-defined]
