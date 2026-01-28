@@ -1,3 +1,4 @@
+import os
 from typing import Any, TypedDict
 
 import numpy as np
@@ -19,7 +20,7 @@ class Config(TypedDict):
 fastapi = FastAPI()
 
 
-@serve.deployment(num_replicas="auto")
+@serve.deployment(num_replicas="auto", ray_actor_options={"num_gpus": 1})
 @serve.ingress(fastapi)
 class BinaryClassifier:
     """Binary classifier for tissue tiles using ONNX Runtime with GPU support."""
@@ -40,21 +41,32 @@ class BinaryClassifier:
         import onnxruntime as ort
 
         logger = logging.getLogger("ray.serve")
-
         self.tile_size = config["tile_size"]
+
+        cache_path = "/tmp/trt_cache"
+        os.makedirs(cache_path, exist_ok=True)
+
+        trt_options = {
+            "device_id": 0,
+            "trt_fp16_enable": True,
+            "trt_engine_cache_enable": True,
+            "trt_engine_cache_path": cache_path,
+            "trt_max_workspace_size": 4294967296,  # 4GB
+        }
 
         # Configure ONNX Runtime session
         sess_options = ort.SessionOptions()
         sess_options.intra_op_num_threads = config["intra_op_num_threads"]
-        sess_options.inter_op_num_threads = 1
-
         # Load model from provider (e.g., MLflow)
         module_path, attr_name = config["model"].pop("_target_").split(":")
         provider = getattr(importlib.import_module(module_path), attr_name)
         self.session = ort.InferenceSession(
             provider(**config["model"]),
             providers=[
-                "TensorrtExecutionProvider",  # Try TensorRT first (fastest)
+                (
+                    "TensorrtExecutionProvider",
+                    trt_options,
+                ),  # Try TensorRT first (fastest)
                 "CUDAExecutionProvider",  # Fallback to CUDA
                 "CPUExecutionProvider",  # Fallback to CPU
             ],
@@ -73,32 +85,42 @@ class BinaryClassifier:
         self.predict.set_max_batch_size(config["max_batch_size"])  # type: ignore[attr-defined]
         self.predict.set_batch_wait_timeout_s(config["batch_wait_timeout_s"])  # type: ignore[attr-defined]
 
+        logger.info("Starting TensorRT warm-up...")
+        dummy_batch = np.zeros(
+            (config["max_batch_size"], 3, self.tile_size, self.tile_size),
+            dtype=np.uint8,
+        )
+        self.session.run([self.output_name], {self.input_name: dummy_batch})
+
     @serve.batch
     async def predict(self, images: list[NDArray[np.uint8]]) -> list[float]:
         """Run inference on a batch of images."""
-        print("BATCH SIZE:", len(images))
-
         # Stack images into batch and ensure uint8 dtype
         batch = np.stack(images, axis=0).astype(np.uint8)
 
-        # Run ONNX model inference
-        outputs = self.session.run([self.output_name], {self.input_name: batch})
+        outputs = self.session.run(
+            [self.output_name],
+            {self.input_name: batch},
+        )
 
-        return outputs[0].squeeze(1).tolist()
+        return outputs[0].flatten().tolist()
 
     @fastapi.post("/")
     async def root(self, request: Request) -> float:
         """Handle inference request with LZ4-compressed image."""
-        # Decompress LZ4 data
         data = self.lz4.decompress(await request.body())
 
-        # Convert to numpy array (HWC format)
-        image = np.frombuffer(data, dtype=np.uint8).reshape(
-            self.tile_size, self.tile_size, 3
+        # Convert and Transpose (HWC -> CHW)
+        image = (
+            np.frombuffer(data, dtype=np.uint8)
+            .reshape(self.tile_size, self.tile_size, 3)
+            .transpose(2, 0, 1)
         )
 
-        # Transpose to CHW format and run prediction
-        return await self.handle.predict.remote(image.transpose(2, 0, 1))
+        # Use ascontiguousarray to ensure the memory layout is optimal for the GPU
+        image = np.ascontiguousarray(image)
+
+        return await self.handle.predict.remote(image)
 
 
 app = BinaryClassifier.bind()  # type: ignore[attr-defined]
