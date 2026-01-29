@@ -54,12 +54,21 @@ class BinaryClassifier:
             "trt_fp16_enable": True,
             "trt_engine_cache_enable": True,
             "trt_engine_cache_path": cache_path,
+            "trt_max_workspace_size": 4 * 1024 * 1024 * 1024,  # 4GB
+            "trt_builder_optimization_level": 5,
+            "trt_timing_cache_enable": True,
         }
 
         # Configure ONNX Runtime session
         sess_options = ort.SessionOptions()
-        sess_options.intra_op_num_threads = 1
+        sess_options.intra_op_num_threads = config["intra_op_num_threads"]
         sess_options.inter_op_num_threads = 1
+
+        # Enable graph optimizations
+        sess_options.graph_optimization_level = (
+            ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        )
+        sess_options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
 
         # Load model from provider (e.g., MLflow)
         module_path, attr_name = config["model"].pop("_target_").split(":")
@@ -89,6 +98,13 @@ class BinaryClassifier:
         self.predict.set_max_batch_size(config["max_batch_size"])  # type: ignore[attr-defined]
         self.predict.set_batch_wait_timeout_s(config["batch_wait_timeout_s"])  # type: ignore[attr-defined]
 
+        logger.info("Starting TensorRT warmup (engine compilation)...")
+        dummy_shape = (config["max_batch_size"], 3, self.tile_size, self.tile_size)
+        dummy_input = np.random.randint(0, 256, dummy_shape, dtype=np.uint8)
+
+        self.session.run([self.output_name], {self.input_name: dummy_input})
+        logger.info("TensorRT engine is ready and cached.")
+
     @serve.batch
     async def predict(self, images: list[NDArray[np.uint8]]) -> list[float]:
         """Run inference on a batch of images."""
@@ -117,7 +133,8 @@ class BinaryClassifier:
         # Use ascontiguousarray to ensure the memory layout is optimal for the GPU
         image = np.ascontiguousarray(image)
 
-        return await self.predict(image)
+        result = await self.predict(image)
+        return result
 
 
 app = BinaryClassifier.bind()  # type: ignore[attr-defined]
