@@ -36,7 +36,7 @@ class BinaryClassifier:
 
         self.lz4 = lz4.frame
 
-    async def reconfigure(self, config: Config) -> None:
+    def reconfigure(self, config: Config) -> None:
         """Load the ONNX model and configure inference settings."""
         import importlib
         import logging
