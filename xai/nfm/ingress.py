@@ -3,15 +3,8 @@ import json
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
-import pyvips
-import torch
 from fastapi import FastAPI
-from PIL import Image, ImageDraw
 from ray import serve
-
-from xai.nfm.configuration import Config
-from xai.nfm.transformer import NucleiGraphEncoder
 
 
 fastapi = FastAPI()
@@ -38,6 +31,11 @@ class NFM:
     output_dir = Path("/mnt/projects/nuclei_foundational_model/xai_masks")
 
     def __init__(self) -> None:
+        import torch
+
+        from xai.nfm.configuration import Config
+        from xai.nfm.transformer import NucleiGraphEncoder
+
         data = torch.load(
             "/mnt/projects/nuclei_foundational_model/model.bin",
             map_location=torch.device(self.device),
@@ -54,6 +52,8 @@ class NFM:
 
     @fastapi.post("/get_spatial_registers")
     def get_spatial_registers(self, slide_path: str):
+        import pandas as pd
+        import torch
         from ratiopath.openslide import OpenSlide
 
         from xai.nfm.misc import elliptic_fourier_descriptors, sample_spatial_registers
@@ -180,6 +180,10 @@ class NFM:
     def generate_mask(
         self, session_id: str, register_ids: list[int], layers: list[int]
     ):
+        import pyvips
+        import torch
+        from PIL import Image, ImageDraw
+
         session_path = self.temp_dir / session_id
         if not session_path.exists():
             return {"error": "Session not found or attention maps expired"}
