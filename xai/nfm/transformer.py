@@ -25,8 +25,13 @@ class Attention(nn.Module):
         self.k_norm = nn.RMSNorm(self.head_dim)
 
     def forward(
-        self, tgt: Tensor, src: Tensor, tgt_pos: Tensor, src_pos: Tensor
-    ) -> Tensor:
+        self,
+        tgt: Tensor,
+        src: Tensor,
+        tgt_pos: Tensor,
+        src_pos: Tensor,
+        return_attn: bool = False,
+    ) -> tuple[Tensor, Tensor | None]:
         self.tgt = tgt
         self.src = src
         self.tgt_pos = tgt_pos
@@ -47,7 +52,9 @@ class Attention(nn.Module):
         x = attn @ v
         x = rearrange(x, "b h n d -> b n (h d)")
 
-        return self.wo(x)
+        if return_attn:
+            return self.wo(x), attn[:, 0]  # .mean(dim=1)
+        return self.wo(x), None
 
     def relprop(self, r: Tensor) -> tuple[Tensor, Tensor]:
         """Compute relevance propagation for Attention.
@@ -66,10 +73,6 @@ class Attention(nn.Module):
         # However, the relprop chain usually flows back to the original input.
 
         attn = F.softmax(self.attn_map, dim=-1)  # [b, h, n, m]
-
-        # Weighted attention across heads
-        # For simplicity, we average across heads and weight by output relevance magnitude
-        r_mag = r.abs().mean(dim=-1, keepdim=True)  # [b, n, 1]
 
         # Contribution from source tokens to target relevance
         # R_src_per_tgt = attn * r_mag?
@@ -105,21 +108,35 @@ class CrossLayer(nn.Module):
         self.pre_ffn_norm = nn.RMSNorm(config.dim)
 
     def forward(
-        self, tgt: Tensor, src: Tensor, tgt_pos: Tensor, src_pos: Tensor
-    ) -> Tensor:
+        self,
+        tgt: Tensor,
+        src: Tensor,
+        tgt_pos: Tensor,
+        src_pos: Tensor,
+        return_attn: bool = False,
+    ) -> tuple[Tensor, list[Tensor] | None]:
         self.tgt_in = tgt
         self.src_in = src
+
         y = self.pre_cross_attn_norm(tgt)
-        self.cross_attn_out = self.cross_attn(y, src, tgt_pos, src_pos)
+        self.cross_attn_out, cross_attn = self.cross_attn(
+            y, src, tgt_pos, src_pos, return_attn=return_attn
+        )
         tgt = tgt + self.cross_attn_out
 
         y = self.pre_self_attn_norm(tgt)
-        self.self_attn_out = self.self_attn(y, y, tgt_pos, tgt_pos)
+        self.self_attn_out, self_attn = self.self_attn(
+            y, y, tgt_pos, tgt_pos, return_attn=return_attn
+        )
         tgt = tgt + self.self_attn_out
 
         y = self.pre_ffn_norm(tgt)
         self.ffn_out = self.ffn(y)
-        return tgt + self.ffn_out
+        out = tgt + self.ffn_out
+
+        if return_attn:
+            return out, (cross_attn, self_attn)
+        return out, None
 
     def relprop(self, r: Tensor) -> tuple[Tensor, Tensor]:
         # Residual LRP: R_in = R_out * (x / (x + f(x)))
@@ -149,15 +166,20 @@ class Layer(nn.Module):
         self.pre_self_attn_norm = nn.RMSNorm(config.dim)
         self.pre_ffn_norm = nn.RMSNorm(config.dim)
 
-    def forward(self, x: Tensor, pos: Tensor) -> Tensor:
+    def forward(
+        self, x: Tensor, pos: Tensor, return_attn: bool = False
+    ) -> tuple[Tensor, Tensor | None]:
         self.x_in = x
         y = self.pre_self_attn_norm(x)
-        self.self_attn_out = self.self_attn(y, y, pos, pos)
+        self.self_attn_out, attn = self.self_attn(
+            y, y, pos, pos, return_attn=return_attn
+        )
         x = x + self.self_attn_out
 
         y = self.pre_ffn_norm(x)
         self.ffn_out = self.ffn(y)
-        return x + self.ffn_out
+        out = x + self.ffn_out
+        return out, attn
 
     def relprop(self, r: Tensor) -> Tensor:
         r_ffn = self.ffn.relprop(r * 0.5)
@@ -183,13 +205,20 @@ class Transformer(nn.Module):
         )
         self.norm = nn.RMSNorm(config.dim)
 
-    def forward(self, src: Tensor, tgt_pos: Tensor, src_pos: Tensor) -> Tensor:
+    def forward(
+        self,
+        src: Tensor,
+        tgt_pos: Tensor,
+        src_pos: Tensor,
+        return_attn: bool = False,
+    ) -> tuple[Tensor, list[Tensor] | None]:
         """Forward pass of the Transformer model.
 
         Args:
             src: Source sequence of shape (b, m, d)
             tgt_pos: Target positions of shape (b, n, 2)
             src_pos: Source positions of shape (b, m, 2)
+            return_attn: Whether to return attention maps.
         """
         # Ignore zero tokens as they are padded polygons
         src_flatten = src.flatten(0, 1)
@@ -201,13 +230,23 @@ class Transformer(nn.Module):
 
         tgt = torch.ones(src.shape[0], tgt_pos.shape[1], src.shape[2]).to(src)
 
+        self_attn_maps = []
+        cross_attn_maps = []
         for layer in self.cross_layers:
-            tgt = layer(tgt, src, tgt_pos, src_pos)
+            tgt, attn = layer(tgt, src, tgt_pos, src_pos, return_attn=return_attn)
+            if return_attn:
+                cross_attn_maps.append(attn[0])
+                self_attn_maps.append(attn[1])
 
         for layer in self.self_layers:
-            tgt = layer(tgt, tgt_pos)
+            tgt, attn = layer(tgt, tgt_pos, return_attn=return_attn)
+            if return_attn:
+                self_attn_maps.append(attn)
 
-        return self.norm(tgt)
+        out = self.norm(tgt)
+        if return_attn:
+            return out, {"self": self_attn_maps, "cross": cross_attn_maps}
+        return out, None
 
     def relprop(self, r: Tensor) -> Tensor:
         # Propagation through self layers
@@ -240,15 +279,16 @@ class NucleiGraphEncoder(nn.Module):
         self.final_norm = nn.BatchNorm1d(config.proj_dim, affine=False)
 
     def forward(
-        self, src: Tensor, tgt_pos: Tensor, src_pos: Tensor
-    ) -> tuple[Tensor, Tensor]:
+        self, src: Tensor, tgt_pos: Tensor, src_pos: Tensor, return_attn: bool = False
+    ) -> tuple[Tensor, Tensor, list[Tensor] | None]:
         """Forward pass of the Transformer model.
 
         Args:
             src: Source sequence of shape (b, m, d)
             tgt_pos: Target positions of shape (b, n, 2)
             src_pos: Source positions of shape (b, m, 2)
+            return_attn: Whether to return attention maps.
         """
-        embed = self.backbone(src, tgt_pos, src_pos)
+        embed, attn = self.backbone(src, tgt_pos, src_pos, return_attn=return_attn)
         # 2. Global Average Pooling
-        return embed, self.final_norm(self.proj(embed.mean(dim=1)))
+        return embed, self.final_norm(self.proj(embed.mean(dim=1))), attn

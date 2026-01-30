@@ -1,9 +1,12 @@
 import hashlib
+import json
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pyvips
 import torch
+from PIL import Image, ImageDraw
 
 # from fastapi import FastAPI
 # from ray import serve
@@ -14,42 +17,38 @@ from xai.nfm.transformer import NucleiGraphEncoder
 # fastapi = FastAPI()
 
 
-def cluster_reorder(centroids: np.ndarray, cluster_size: int = 4096):
-    """Reorder centroids and efd so that sequential blocks form spatial clusters."""
+def get_cluster_indices(centroids: np.ndarray, cluster_size: int = 4096):
+    """Get blocks of indices that form spatial clusters using MiniBatchKMeans."""
     from sklearn.cluster import MiniBatchKMeans
 
     n_clusters = max(1, len(centroids) // cluster_size)
     kmeans = MiniBatchKMeans(n_clusters=n_clusters, n_init=3, random_state=42)
     labels = kmeans.fit_predict(centroids)
 
-    return np.argsort(labels)
+    indices = np.argsort(labels)
+    return [indices[i : i + cluster_size] for i in range(0, len(indices), cluster_size)]
 
 
 # @serve.deployment(num_replicas="auto")
 # @serve.ingress(fastapi)
 class NFM:
-    def __init__(self) -> None:
-        data = torch.load("pytorch_model.bin", map_location=torch.device("cuda"))
-        state_dict = {k.replace("model.", "", 1): v for k, v in data.items()}
+    device = "cuda"
+    mpp = 0.25
+    efd_order = 16
+    output_dir = Path("/mnt/projects/nuclei_foundational_model/xai_masks")
 
-        self.model = NucleiGraphEncoder(Config()).cuda()
+    def __init__(self) -> None:
+        data = torch.load("pytorch_model.bin", map_location=torch.device(self.device))
+        state_dict = {k.replace("model.", "", 1): v for k, v in data.items()}
+        self.config = Config()
+        self.model = NucleiGraphEncoder(self.config).to(self.device)
         self.model.load_state_dict(state_dict, strict=False)
         self.model.eval()
 
-    def predict(
-        self, src: torch.Tensor, tgt_pos: torch.Tensor, src_pos: torch.Tensor
-    ) -> torch.Tensor:
-        src = src.unsqueeze(0).cuda()
-        tgt_pos = tgt_pos.unsqueeze(0).cuda()
-        src_pos = src_pos.unsqueeze(0).cuda()
+        self.temp_dir = Path("/tmp/nfm_attention")
+        self.temp_dir.mkdir(exist_ok=True, parents=True)
+        self.output_dir.mkdir(exist_ok=True, parents=True)
 
-        print(src.shape, tgt_pos.shape, src_pos.shape)
-
-        with torch.no_grad():
-            output, _ = self.model(src, tgt_pos, src_pos)
-        return output
-
-    # @fastapi.post("/get_spatial_registers")
     def get_spatial_registers(self, slide_path: str):
         from ratiopath.openslide import OpenSlide
 
@@ -58,94 +57,189 @@ class NFM:
             sample_spatial_registers,
         )
 
+        session_id = hashlib.sha256(slide_path.encode()).hexdigest()
+        session_path = self.temp_dir / session_id
+        session_path.mkdir(exist_ok=True, parents=True)
+
         data = pd.read_parquet(
             f"/mnt/projects/nuclei_based_wsi_analysis/nuclei_segmentation/tile_level_annotations/slide_id={Path(slide_path).stem}",
             columns=["polygon"],
         )
-        polygons = np.stack(data.polygon).reshape(-1, 64, 2)
+        polygons = np.stack(data.polygon).reshape(-1, 64, 2)[:10000]
+        # Save polygons for mask generation later
+        np.save(session_path / "polygons.npy", polygons)
 
         with OpenSlide(slide_path) as slide:
-            level = slide.closest_level(0.5)
+            level = slide.closest_level(self.mpp)
             mpp_x, mpp_y = slide.slide_resolution(level)
-            polygons[..., 0] *= mpp_x
-            polygons[..., 1] *= mpp_y
+            extent_x, extent_y = slide.level_dimensions[level]
 
-        efd = elliptic_fourier_descriptors(polygons.astype(np.float64), order=16)
-        efd = efd.astype(np.float32)
-        centroids = polygons.mean(axis=1).astype(np.float32)
-
-        indices = cluster_reorder(centroids)
-        efd = efd[indices]
-        centroids = centroids[indices]
-
-        n_spatial_reg = centroids.shape[0] // 16
-
-        # return spatial_registers
-        embed = torch.empty((1, n_spatial_reg, 384), dtype=torch.float32).cuda()
-        spatial_registers = torch.empty((n_spatial_reg, 2), dtype=torch.float32)
-
-        for i in range(0, len(polygons), 4096):
-            j = i // 16
-            spatial_registers[j : j + 256] = torch.from_numpy(
-                sample_spatial_registers(
-                    centroids[i : i + 4096],
-                    n_samples=len(centroids[i : i + 4096]) // 16,
-                )
+        with open(session_path / "metadata.json", "w") as f:
+            json.dump(
+                {
+                    "extent_x": extent_x,
+                    "extent_y": extent_y,
+                    "mpp_x": mpp_x,
+                    "mpp_y": mpp_y,
+                },
+                f,
             )
 
-            embed[:, j : j + 256] = self.predict(
-                src=torch.from_numpy(efd[i : i + 4096]).reshape(-1, 64),
-                tgt_pos=spatial_registers[j : j + 256],
-                src_pos=torch.from_numpy(centroids[i : i + 4096]),
+        polygons[..., 0] *= mpp_x
+        polygons[..., 1] *= mpp_y
+        efd = elliptic_fourier_descriptors(
+            polygons.astype(np.float64), order=self.efd_order
+        ).astype(np.float32)
+        centroids = polygons.mean(axis=1)
+
+        all_attn_data = []
+        all_embeddings = []
+        spatial_registers_list = []
+        current_reg_idx = 0
+
+        for indices in get_cluster_indices(centroids):
+            n_reg_chunk = len(indices) // 16
+            if n_reg_chunk == 0:
+                continue
+
+            chunk_centroids = centroids[indices]
+            chunk_efd = efd[indices]
+
+            chunk_spatial_registers = sample_spatial_registers(
+                chunk_centroids, n_samples=n_reg_chunk
             )
 
-        session_id = hashlib.sha256(slide_path.encode()).hexdigest()
-        return embed, spatial_registers.numpy(), centroids
+            src = torch.from_numpy(chunk_efd).view(1, -1, 64).to(self.device)
+            tgt_pos = (
+                torch.from_numpy(chunk_spatial_registers)
+                .unsqueeze(0)
+                .to(self.device)
+                .float()
+            )
+            src_pos = (
+                torch.from_numpy(chunk_centroids).unsqueeze(0).to(self.device).float()
+            )
 
-        # session_id = str(uuid.uuid4())
+            with torch.no_grad():
+                embed, _, attn = self.model(src, tgt_pos, src_pos, return_attn=True)
 
-    # @fastapi.post("/explain")
-    async def explain(
-        self,
-        src: list[list[float]],
-        tgt_pos: list[list[float]],
-        src_pos: list[list[float]],
-    ) -> dict:
-        """Compute LRP for each output token with respect to input tokens."""
-        src_t = torch.tensor(src).unsqueeze(0).float()
-        tgt_pos_t = torch.tensor(tgt_pos).unsqueeze(0).float()
-        src_pos_t = torch.tensor(src_pos).unsqueeze(0).float()
+            all_attn_data.append(
+                {
+                    "data": torch.stack(attn["cross"]).squeeze(1),
+                    "reg_start": current_reg_idx,
+                    "nuclei_idx": torch.from_numpy(indices).long().to(self.device),
+                }
+            )
 
-        # 1. Forward pass to store activations
-        embed, _ = self.model(src_t, tgt_pos_t, src_pos_t)
+            all_embeddings.append(embed.cpu().numpy())
+            spatial_registers_list.append(chunk_spatial_registers)
+            current_reg_idx += n_reg_chunk
 
-        # 2. Backward pass with LRP
-        # Initialize relevance as the identity for each output token
-        # This gives us attribution for each output token separately
-        num_output_tokens = embed.shape[1]
-        num_input_tokens = src_t.shape[1]
+        final_indices = []
+        final_values = []
 
-        # We can compute this in a loop or batch it if memory allows
-        # For now, let's compute the attribution matrix
-        attribution_matrix = []
+        for chunk in all_attn_data:
+            # Find non-zero values in the chunk
+            # Adjust threshold (e.g., > 1e-4) if you want it even smaller/sparser
+            nz_layers, nz_regs, nz_nuclei_local = torch.where(chunk["data"] > 1e-3)
 
-        for i in range(num_output_tokens):
-            # Relevance starts at token i
-            r = torch.zeros_like(embed)
-            r[0, i, :] = embed[0, i, :]  # Start with the activation of that token
+            # Map local indices to global dimensions
+            global_regs = nz_regs + chunk["reg_start"]
+            global_nuclei = chunk["nuclei_idx"][nz_nuclei_local]
 
-            # Propagate back through the transformer
-            r_back = self.model.backbone.relprop(r)
+            # Stack into (Layer, Head, Reg, Nuclei)
+            chunk_indices = torch.stack([nz_layers, global_regs, global_nuclei])
 
-            # Magnitude of relevance per input token
-            r_per_token = r_back.abs().mean(dim=-1).squeeze(0)  # [m]
-            attribution_matrix.append(r_per_token.tolist())
+            final_indices.append(chunk_indices)
+            final_values.append(chunk["data"][nz_layers, nz_regs, nz_nuclei_local])
+
+        # Combine everything into one 4D sparse tensor
+        total_nuclei = len(polygons)
+        total_reg = total_nuclei // 16
+        num_layers = self.config.num_cross_layers + self.config.num_self_layers
+
+        full_sparse_attn = torch.sparse_coo_tensor(
+            torch.cat(final_indices, dim=1),
+            torch.cat(final_values),
+            size=(num_layers, total_reg, total_nuclei),
+        ).coalesce()
+
+        # torch.save(full_sparse_attn, session_path / "attention_4d.pt")
+        torch.save(full_sparse_attn.cpu(), "attention_4d.pt")
 
         return {
-            "attribution_matrix": attribution_matrix,  # [num_output_tokens, num_input_tokens]
-            "num_output_tokens": num_output_tokens,
-            "num_input_tokens": num_input_tokens,
+            "session_id": session_id,
+            "embeddings": np.concatenate(all_embeddings, axis=1).tolist(),
+            "spatial_registers": np.concatenate(
+                spatial_registers_list, axis=0
+            ).tolist(),
         }
+
+    def generate_mask(
+        self, session_id: str, register_ids: list[int], layers: list[int]
+    ):
+        session_path = self.temp_dir / session_id
+        if not session_path.exists():
+            return {"error": "Session not found or attention maps expired"}
+
+        with open(session_path / "metadata.json") as f:
+            metadata = json.load(f)
+
+        polygons = np.load(session_path / "polygons.npy")
+        extent_x = metadata["extent_x"]
+        extent_y = metadata["extent_y"]
+
+        attention = torch.load("attention_4d.pt")
+        attention = torch.index_select(attention, 0, torch.tensor(layers))
+        attention = torch.index_select(attention, 1, torch.tensor(register_ids))
+        total_attention = attention.to_dense().mean(dim=(0, 1)).numpy()
+
+        # Normalize attention scores (0-255)
+        if total_attention.max() > 0:
+            total_attention = (total_attention / total_attention.max() * 255).astype(
+                np.uint8
+            )
+        else:
+            total_attention = total_attention.astype(np.uint8)
+
+        # vips_img = pyvips.Image.black(extent_x, extent_y, bands=1)
+        print("Generating mask...")
+
+        img = Image.new("L", (extent_x // 20, extent_y // 20), 0)
+        draw = ImageDraw.Draw(img)
+        for i, poly in enumerate(polygons):
+            score = int(total_attention[i])
+            if score > 0:
+                draw.polygon(poly / 20, fill=score)
+
+        img.save("out.png")
+
+        # for i, poly in enumerate(polygons):
+        #     score = int(total_attention[i])
+        #     if score > 0:
+        #         x_min, y_min = np.floor(poly.min(axis=0)).astype(int)
+        #         x_max, y_max = np.ceil(poly.max(axis=0)).astype(int)
+        #         img = Image.new("L", (x_max - x_min, y_max - y_min), 0)
+        #         draw = ImageDraw.Draw(img)
+        #         draw.polygon(poly - [x_min, y_min], fill=score)
+
+        #         vips_patch = pyvips.Image.new_from_array(np.array(img))
+        #         vips_img = vips_img.draw_image(vips_patch, x_min, y_min)
+
+        # output_path = self.output_dir / f"{session_id}_attention_rollout.tif"
+        # vips_img.tiffsave(
+        #     output_path,
+        #     bigtiff=True,
+        #     compression=pyvips.enums.ForeignTiffCompression.DEFLATE,
+        #     tile=True,
+        #     tile_width=512,
+        #     tile_height=512,
+        #     xres=1000 / metadata["mpp_x"],
+        #     yres=1000 / metadata["mpp_y"],
+        #     pyramid=True,
+        # )
+
+        # return {"mask_path": output_path}
 
 
 # app = NFM.bind()
@@ -157,46 +251,8 @@ r = nfm.get_spatial_registers(
 )
 
 
-import matplotlib.pyplot as plt
-import torch
-from sklearn.decomposition import PCA
-
-
-embed, spatial_registers, centroids = nfm.get_spatial_registers(
-    "/mnt/data/MOU/prostate/tile_level_annotations/P-2016_0383-12-0.mrxs"
+o = nfm.generate_mask(
+    "ad2512ddff3337620fe0243ef95222bc78089ee4da23a0d91f331314eccad8b1",
+    register_ids=[200],
+    layers=list(range(10, 11)),
 )
-
-# Squeeze the batch dimension and move to CPU
-embeddings = embed.squeeze(0).cpu().detach().numpy()
-pca_color = PCA(n_components=1).fit_transform(embeddings).flatten()
-
-# Plot the spatial registers colored by their embedding features
-plt.figure(figsize=(12, 10))
-
-# Plot all centroids as small points in the background
-# plt.scatter(
-#     centroids[:, 0],
-#     centroids[:, 1],
-#     c="lightgray",
-#     alpha=0.3,
-#     s=5,
-#     label="All Centroids",
-# )
-
-scatter = plt.scatter(
-    spatial_registers[:, 0],
-    spatial_registers[:, 1],
-    c=pca_color,
-    cmap="viridis",
-    alpha=0.7,
-    s=2,
-    label="Spatial Registers",
-)
-plt.legend()
-plt.colorbar(scatter, label="First Principal Component (Feature Variance)")
-plt.title("Spatial Distribution of Embeddings")
-plt.xlabel("X Coordinate")
-plt.ylabel("Y Coordinate")
-plt.gca().invert_yaxis()  # Invert Y to match image/slide coordinate systems
-plt.grid(True, linestyle="--", alpha=0.3)
-plt.savefig("spatial_embeddings_map.png", dpi=300)
