@@ -38,7 +38,10 @@ class NFM:
     output_dir = Path("/mnt/projects/nuclei_foundational_model/xai_masks")
 
     def __init__(self) -> None:
-        data = torch.load("pytorch_model.bin", map_location=torch.device(self.device))
+        data = torch.load(
+            "/mnt/projects/nuclei_foundational_model/model.bin",
+            map_location=torch.device(self.device),
+        )
         state_dict = {k.replace("model.", "", 1): v for k, v in data.items()}
         self.config = Config()
         self.model = NucleiGraphEncoder(self.config).to(self.device)
