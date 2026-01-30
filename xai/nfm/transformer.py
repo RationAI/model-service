@@ -53,42 +53,8 @@ class Attention(nn.Module):
         x = rearrange(x, "b h n d -> b n (h d)")
 
         if return_attn:
-            return self.wo(x), attn[:, 0]  # .mean(dim=1)
+            return self.wo(x), attn.max(dim=1).values
         return self.wo(x), None
-
-    def relprop(self, r: Tensor) -> tuple[Tensor, Tensor]:
-        """Compute relevance propagation for Attention.
-
-        Args:
-            r: Relevance of output tokens [b, n, d]
-
-        Returns:
-            Relevance for target and source tokens.
-        """
-        # Simplified Attention LRP: R_i = sum_j (alpha_ij * R_j)
-        # We want to return the contribution of each source token to each target token.
-        # But standard relprop returns per-token relevance of the same shape as input.
-
-        # If we want output tokens w.r.t input tokens, we are looking for a [n, m] matrix.
-        # However, the relprop chain usually flows back to the original input.
-
-        attn = F.softmax(self.attn_map, dim=-1)  # [b, h, n, m]
-
-        # Contribution from source tokens to target relevance
-        # R_src_per_tgt = attn * r_mag?
-        # Actually, let's return the relevance for src that will be used by the caller.
-
-        # Backprop through attention: R_src = attn^T @ R_tgt
-        # (Actually attn is [n, m], so R_src [m, d] = attn^T [m, n] @ R_tgt [n, d])
-
-        # Since r is [b, n, d], we want r_src as [b, m, d]
-        # We average attention over heads for simplicity
-        avg_attn = attn.mean(dim=1)  # [b, n, m]
-
-        r_src = torch.bmm(avg_attn.transpose(-1, -2), r)  # [b, m, d]
-        r_tgt = r  # The tgt relevance stays (simplified)
-
-        return r_tgt, r_src
 
 
 class CrossLayer(nn.Module):
@@ -138,21 +104,6 @@ class CrossLayer(nn.Module):
             return out, (cross_attn, self_attn)
         return out, None
 
-    def relprop(self, r: Tensor) -> tuple[Tensor, Tensor]:
-        # Residual LRP: R_in = R_out * (x / (x + f(x)))
-        # For simplicity, we split relevance 50/50 or proportional to magnitude
-
-        r_ffn = self.ffn.relprop(r * 0.5)
-        r = r * 0.5 + r_ffn
-
-        r_self, _ = self.self_attn.relprop(r * 0.5)
-        r = r * 0.5 + r_self
-
-        r_cross, r_src = self.cross_attn.relprop(r * 0.5)
-        r_tgt = r * 0.5 + r_cross
-
-        return r_tgt, r_src
-
 
 class Layer(nn.Module):
     def __init__(self, config: Config) -> None:
@@ -180,14 +131,6 @@ class Layer(nn.Module):
         self.ffn_out = self.ffn(y)
         out = x + self.ffn_out
         return out, attn
-
-    def relprop(self, r: Tensor) -> Tensor:
-        r_ffn = self.ffn.relprop(r * 0.5)
-        r = r * 0.5 + r_ffn
-
-        r_self, _ = self.self_attn.relprop(r * 0.5)
-        r = r * 0.5 + r_self
-        return r
 
 
 class Transformer(nn.Module):
@@ -247,19 +190,6 @@ class Transformer(nn.Module):
         if return_attn:
             return out, {"self": self_attn_maps, "cross": cross_attn_maps}
         return out, None
-
-    def relprop(self, r: Tensor) -> Tensor:
-        # Propagation through self layers
-        for layer in reversed(self.self_layers):
-            r = layer.relprop(r)
-
-        # Propagation through cross layers
-        r_src_total = torch.zeros_like(self.cross_layers[0].src_in)
-        for layer in reversed(self.cross_layers):
-            r, r_src = layer.relprop(r)
-            r_src_total += r_src
-
-        return r_src_total
 
 
 class NucleiGraphEncoder(nn.Module):

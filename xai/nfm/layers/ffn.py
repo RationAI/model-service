@@ -14,6 +14,3 @@ class FeedForward(nn.Module):
         gate, up = self.gating_proj(x).chunk(2, dim=-1)
         outputs = F.gelu(gate, approximate="tanh") * up
         return self.down_proj(outputs)
-
-    def relprop(self, r: Tensor) -> Tensor:
-        return r # Simplified for now, will refine if needed

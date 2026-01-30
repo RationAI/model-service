@@ -6,15 +6,15 @@ import numpy as np
 import pandas as pd
 import pyvips
 import torch
+from fastapi import FastAPI
 from PIL import Image, ImageDraw
+from ray import serve
 
-# from fastapi import FastAPI
-# from ray import serve
 from xai.nfm.configuration import Config
 from xai.nfm.transformer import NucleiGraphEncoder
 
 
-# fastapi = FastAPI()
+fastapi = FastAPI()
 
 
 def get_cluster_indices(centroids: np.ndarray, cluster_size: int = 4096):
@@ -29,8 +29,8 @@ def get_cluster_indices(centroids: np.ndarray, cluster_size: int = 4096):
     return [indices[i : i + cluster_size] for i in range(0, len(indices), cluster_size)]
 
 
-# @serve.deployment(num_replicas="auto")
-# @serve.ingress(fastapi)
+@serve.deployment(num_replicas="auto")
+@serve.ingress(fastapi)
 class NFM:
     device = "cuda"
     mpp = 0.25
@@ -49,13 +49,11 @@ class NFM:
         self.temp_dir.mkdir(exist_ok=True, parents=True)
         self.output_dir.mkdir(exist_ok=True, parents=True)
 
+    @fastapi.post("/get_spatial_registers")
     def get_spatial_registers(self, slide_path: str):
         from ratiopath.openslide import OpenSlide
 
-        from xai.nfm.misc import (
-            elliptic_fourier_descriptors,
-            sample_spatial_registers,
-        )
+        from xai.nfm.misc import elliptic_fourier_descriptors, sample_spatial_registers
 
         session_id = hashlib.sha256(slide_path.encode()).hexdigest()
         session_path = self.temp_dir / session_id
@@ -65,7 +63,7 @@ class NFM:
             f"/mnt/projects/nuclei_based_wsi_analysis/nuclei_segmentation/tile_level_annotations/slide_id={Path(slide_path).stem}",
             columns=["polygon"],
         )
-        polygons = np.stack(data.polygon).reshape(-1, 64, 2)[:10000]
+        polygons = np.stack(data.polygon).reshape(-1, 64, 2)
         # Save polygons for mask generation later
         np.save(session_path / "polygons.npy", polygons)
 
@@ -164,17 +162,18 @@ class NFM:
             size=(num_layers, total_reg, total_nuclei),
         ).coalesce()
 
-        # torch.save(full_sparse_attn, session_path / "attention_4d.pt")
-        torch.save(full_sparse_attn.cpu(), "attention_4d.pt")
+        torch.save(full_sparse_attn.cpu(), session_path / "attention_3d.pt")
 
+        spatial_registers = np.concatenate(spatial_registers_list, axis=0)
+        spatial_registers[..., 0] /= mpp_x
+        spatial_registers[..., 1] /= mpp_y
         return {
             "session_id": session_id,
             "embeddings": np.concatenate(all_embeddings, axis=1).tolist(),
-            "spatial_registers": np.concatenate(
-                spatial_registers_list, axis=0
-            ).tolist(),
+            "spatial_registers": spatial_registers.tolist(),
         }
 
+    @fastapi.post("/generate_mask")
     def generate_mask(
         self, session_id: str, register_ids: list[int], layers: list[int]
     ):
@@ -189,30 +188,31 @@ class NFM:
         extent_x = metadata["extent_x"]
         extent_y = metadata["extent_y"]
 
-        attention = torch.load("attention_4d.pt")
+        attention = torch.load(session_path / "attention_3d.pt")
         attention = torch.index_select(attention, 0, torch.tensor(layers))
         attention = torch.index_select(attention, 1, torch.tensor(register_ids))
-        total_attention = attention.to_dense().mean(dim=(0, 1)).numpy()
+
+        dense_attention = attention.to_dense()
+
+        # Average over registers, then cumulative product over layers
+        # Result shape: [nuclei]
+        total_attention = dense_attention.sum(0).mean(dim=0).numpy()
 
         # Normalize attention scores (0-255)
-        if total_attention.max() > 0:
-            total_attention = (total_attention / total_attention.max() * 255).astype(
-                np.uint8
-            )
-        else:
-            total_attention = total_attention.astype(np.uint8)
+        total_attention = (total_attention / total_attention.max() * 255).astype(
+            np.uint8
+        )
 
         # vips_img = pyvips.Image.black(extent_x, extent_y, bands=1)
-        print("Generating mask...")
 
-        img = Image.new("L", (extent_x // 20, extent_y // 20), 0)
+        img = Image.new("L", (extent_x // 2, extent_y // 2), 0)
         draw = ImageDraw.Draw(img)
         for i, poly in enumerate(polygons):
             score = int(total_attention[i])
             if score > 0:
-                draw.polygon(poly / 20, fill=score)
+                draw.polygon(poly / 2, fill=score)
 
-        img.save("out.png")
+        vips_img = pyvips.Image.new_from_array(img)
 
         # for i, poly in enumerate(polygons):
         #     score = int(total_attention[i])
@@ -226,33 +226,20 @@ class NFM:
         #         vips_patch = pyvips.Image.new_from_array(np.array(img))
         #         vips_img = vips_img.draw_image(vips_patch, x_min, y_min)
 
-        # output_path = self.output_dir / f"{session_id}_attention_rollout.tif"
-        # vips_img.tiffsave(
-        #     output_path,
-        #     bigtiff=True,
-        #     compression=pyvips.enums.ForeignTiffCompression.DEFLATE,
-        #     tile=True,
-        #     tile_width=512,
-        #     tile_height=512,
-        #     xres=1000 / metadata["mpp_x"],
-        #     yres=1000 / metadata["mpp_y"],
-        #     pyramid=True,
-        # )
+        output_path = self.output_dir / f"{session_id}_attention_rollout.tif"
+        vips_img.tiffsave(
+            output_path,
+            bigtiff=True,
+            compression=pyvips.enums.ForeignTiffCompression.DEFLATE,
+            tile=True,
+            tile_width=512,
+            tile_height=512,
+            xres=1000 / metadata["mpp_x"] * 2,
+            yres=1000 / metadata["mpp_y"] * 2,
+            pyramid=True,
+        )
 
-        # return {"mask_path": output_path}
-
-
-# app = NFM.bind()
-
-nfm = NFM()
-
-r = nfm.get_spatial_registers(
-    "/mnt/data/MOU/prostate/tile_level_annotations/P-2016_0383-12-0.mrxs"
-)
+        return {"mask_path": output_path}
 
 
-o = nfm.generate_mask(
-    "ad2512ddff3337620fe0243ef95222bc78089ee4da23a0d91f331314eccad8b1",
-    register_ids=[200],
-    layers=list(range(10, 11)),
-)
+app = NFM.bind()
