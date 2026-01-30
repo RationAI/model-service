@@ -4,10 +4,19 @@ from pathlib import Path
 
 import numpy as np
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from ray import serve
 
 
 fastapi = FastAPI()
+
+fastapi.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows any website (including your xOpat) to connect
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows POST, OPTIONS, etc.
+    allow_headers=["*"],
+)
 
 
 def get_cluster_indices(centroids: np.ndarray, cluster_size: int = 4096):
