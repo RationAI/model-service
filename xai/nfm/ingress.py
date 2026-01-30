@@ -132,7 +132,7 @@ class NFM:
                 }
             )
 
-            all_embeddings.append(embed.cpu().numpy())
+            all_embeddings.append(embed.squeeze(0).cpu().numpy())
             spatial_registers_list.append(chunk_spatial_registers)
             current_reg_idx += n_reg_chunk
 
@@ -172,7 +172,7 @@ class NFM:
         spatial_registers[..., 1] /= mpp_y
         return {
             "session_id": session_id,
-            "embeddings": np.concatenate(all_embeddings, axis=1).tolist(),
+            "embeddings": np.concatenate(all_embeddings, axis=0).tolist(),
             "spatial_registers": spatial_registers.tolist(),
         }
 
