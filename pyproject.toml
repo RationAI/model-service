@@ -7,11 +7,15 @@ license = { file = "LICENSE" }
 requires-python = ">=3.12"
 dependencies = [
     "lz4>=4.4.5",
+    "huggingface-hub>=0.23.0",
     "mlflow<3.0",
     "onnxruntime>=1.23.2",
     "pillow>=11.3.0",
     "ratiopath>=1.0.3",
     "ray[serve]>=2.48.0",
+    "transformers>=4.48.0",
+    "torch>=2.5.0",
+    "timm>=1.0.0",
 ]
 
 [dependency-groups]

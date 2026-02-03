@@ -66,7 +66,7 @@ class Virchow2:
             act_layer=torch.nn.SiLU,
         )
         self.model = self.model.to(self.device).eval()
-        logger.info("Model loaded and moved to GPU.")
+        logger.info("Virchow2 model loaded and moved to GPU.")
 
         self.transforms = create_transform(
             **resolve_data_config(self.model.pretrained_cfg, model=self.model)
@@ -82,7 +82,7 @@ class Virchow2:
             torch.inference_mode(),
             torch.autocast(device_type="cuda", dtype=torch.float16),
         ):
-            # Create a dummy input tensor with the expected shape (B, C, H, W)
+            # Create a dummy input tensor
             dummy_input = torch.randn(
                 1, 3, self.tile_size, self.tile_size, device=self.device
             )
