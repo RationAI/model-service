@@ -21,10 +21,7 @@ class Config(TypedDict):
 fastapi = FastAPI()
 
 
-@serve.deployment(
-    num_replicas="auto",
-    ray_actor_options={"num_gpus": 1},
-)
+@serve.deployment(num_replicas="auto")
 @serve.ingress(fastapi)
 class BinaryClassifier:
     """Binary classifier for tissue tiles using ONNX Runtime with GPU support."""
