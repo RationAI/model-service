@@ -19,27 +19,26 @@ spec:
               max_replicas: 4
               target_ongoing_requests: 32
             ray_actor_options:
-              num_cpus: 6
-              memory: 6442450944 # 6 GiB
+              num_cpus: 4
+              num_gpus: 1
+              memory: 4294967296  # 4 GiB
               runtime_env:
                 env_vars:
                   MLFLOW_TRACKING_URI: http://mlflow.rationai-mlflow:5000
             user_config:
               tile_size: 512
-              max_batch_size: 32
-              batch_wait_timeout_s: 0.5
-              mean: [228.5544, 178.8584, 219.8793]
-              std: [27.8285, 51.4639, 26.4458]
-              intra_op_num_threads: 5
+              max_batch_size: 16
+              batch_wait_timeout_s: 0.01
+              intra_op_num_threads: 4
               model:
                 _target_: providers.model_provider:mlflow
-                artifact_uri: mlflow-artifacts:/65/aebc892f526047249b972f200bef4381/artifacts/checkpoints/epoch=0-step=6972/model.onnx
+                artifact_uri: mlflow-artifacts:/65/aebc892f526047249b972f200bef4381/artifacts/checkpoints/epoch=0-step=6972/prostate_model_norm.onnx
 
       - name: episeg-1
         import_path: models.semantic_segmentation:app
         route_prefix: /episeg-1
         runtime_env:
-          working_dir: https://gitlab.ics.muni.cz/rationai/infrastructure/model-service/-/archive/feature/gpu/model-service-feature-gpu.zip
+          working_dir: https://gitlab.ics.muni.cz/rationai/infrastructure/model-service/-/archive/master/model-service-master.zip
         deployments:
           - name: SemanticSegmentation
             max_ongoing_requests: 16
@@ -118,6 +117,9 @@ spec:
                 requests:
                   cpu: 0
                   memory: 4Gi
+              env:
+                - name: HTTPS_PROXY
+                  value: http://proxy.ics.muni.cz:3128
               ports:
                 - containerPort: 6379
                   name: gcs-server
@@ -151,11 +153,11 @@ spec:
                 imagePullPolicy: Always
                 resources:
                   limits:
-                    cpu: 16
-                    memory: 24Gi
+                    cpu: 8
+                    memory: 16Gi
                   requests:
-                    cpu: 16
-                    memory: 24Gi
+                    cpu: 8
+                    memory: 16Gi
                 env:
                   - name: HTTPS_PROXY
                     value: http://proxy.ics.muni.cz:3128
@@ -177,6 +179,8 @@ spec:
                     mountPath: /mnt/projects
                   - name: bioptic-tree
                     mountPath: /mnt/bioptic_tree
+                  - name: trt-cache-volume
+                    mountPath: /mnt/cache
 
             volumes:
               - name: data
@@ -191,6 +195,9 @@ spec:
               - name: bioptic-tree
                 persistentVolumeClaim:
                   claimName: bioptictree-ro
+              - name: trt-cache-volume
+                persistentVolumeClaim:
+                  claimName: tensorrt-cache-pvc
 
       - groupName: gpu-workers
         replicas: 0
@@ -199,8 +206,10 @@ spec:
         template:
           spec:
             securityContext:
+              fsGroup: 1000
               fsGroupChangePolicy: OnRootMismatch
               runAsNonRoot: true
+              runAsUser: 1000
               seccompProfile:
                 type: RuntimeDefault
             nodeSelector:
@@ -211,12 +220,12 @@ spec:
                 imagePullPolicy: Always
                 resources:
                   limits:
-                    cpu: 4
-                    memory: 12Gi
+                    cpu: 8
+                    memory: 24Gi
                     nvidia.com/gpu: 1
                   requests:
-                    cpu: 4
-                    memory: 12Gi
+                    cpu: 8
+                    memory: 24Gi
                 env:
                   - name: HTTPS_PROXY
                     value: http://proxy.ics.muni.cz:3128
@@ -238,6 +247,8 @@ spec:
                     mountPath: /mnt/projects
                   - name: bioptic-tree
                     mountPath: /mnt/bioptic_tree
+                  - name: trt-cache-volume
+                    mountPath: /mnt/cache
 
             volumes:
               - name: data
@@ -252,3 +263,6 @@ spec:
               - name: bioptic-tree
                 persistentVolumeClaim:
                   claimName: bioptictree-ro
+              - name: trt-cache-volume
+                persistentVolumeClaim:
+                  claimName: tensorrt-cache-pvc
