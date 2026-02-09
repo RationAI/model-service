@@ -114,7 +114,7 @@ class BinaryClassifier:
             {self.input_name: batch},
         )
 
-        return outputs[0].flatten().tolist()
+        return outputs[0].flatten().tolist()  # pyright: ignore[reportAttributeAccessIssue]
 
     @fastapi.post("/")
     async def root(self, request: Request) -> float:
