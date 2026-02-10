@@ -84,6 +84,43 @@ spec:
               num_threads: 8
               max_concurrent_tasks: 24
 
+      - name: virchow2
+        import_path: models.virchow2:app
+        route_prefix: /virchow2        
+        runtime_env:
+          config:
+            setup_timeout_seconds: 1800
+          working_dir: https://gitlab.ics.muni.cz/rationai/infrastructure/model-service/-/archive/master/model-service-master.zip
+          pip:
+            - https://download.pytorch.org/whl/cu118/torch-2.4.0%2Bcu118-cp312-cp312-linux_x86_64.whl
+            - https://download.pytorch.org/whl/cu118/torchvision-0.19.0%2Bcu118-cp312-cp312-linux_x86_64.whl
+            - timm>=1.0.0
+            - huggingface-hub>=0.23.0
+          env_vars:
+            HF_TOKEN: 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
+        deployments:
+          - name: Virchow2
+            max_ongoing_requests: 32
+            max_queued_requests: 64
+            autoscaling_config:
+              min_replicas: 0
+              max_replicas: 1
+              target_ongoing_requests: 16
+            ray_actor_options:
+              num_cpus: 4
+              num_gpus: 1
+              memory: 8589934592 # 8 GiB
+              runtime_env:
+                env_vars:
+                   HF_HOME: "/mnt/huggingface_cache"
+            user_config:
+              tile_size: 224
+              max_batch_size: 16
+              batch_wait_timeout_s: 0.1
+              model:
+                _target_: providers.model_provider:huggingface
+                repo_id: paige-ai/Virchow2
+
   rayClusterConfig:
     rayVersion: 2.53.0
     enableInTreeAutoscaling: true
@@ -181,6 +218,8 @@ spec:
                     mountPath: /mnt/bioptic_tree
                   - name: trt-cache-volume
                     mountPath: /mnt/cache
+                  - name: huggingface-cache
+                    mountPath: /mnt/huggingface_cache
 
             volumes:
               - name: data
@@ -198,6 +237,9 @@ spec:
               - name: trt-cache-volume
                 persistentVolumeClaim:
                   claimName: tensorrt-cache-pvc
+              - name: huggingface-cache
+                persistentVolumeClaim:
+                  claimName: huggingface-cache-pvc
 
       - groupName: gpu-workers
         replicas: 0
@@ -249,6 +291,8 @@ spec:
                     mountPath: /mnt/bioptic_tree
                   - name: trt-cache-volume
                     mountPath: /mnt/cache
+                  - name: huggingface-cache
+                    mountPath: /mnt/huggingface_cache
 
             volumes:
               - name: data
@@ -266,3 +310,6 @@ spec:
               - name: trt-cache-volume
                 persistentVolumeClaim:
                   claimName: tensorrt-cache-pvc
+              - name: huggingface-cache
+                persistentVolumeClaim:
+                  claimName: huggingface-cache-pvc
