@@ -1,11 +1,12 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: tensorrt-cache-pvc
+  name: mlflow-cache-pvc
+  namespace: rationai-jobs-ns
 spec:
   accessModes:
     - ReadWriteMany
-  storageClassName: nfs-csi
   resources:
     requests:
-      storage: 20Gi
+      storage: 10Gi
+  storageClassName: nfs-csi

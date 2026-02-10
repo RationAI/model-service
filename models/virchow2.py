@@ -108,9 +108,13 @@ class Virchow2:
         ):
             output = self.model(tensors)
 
-            class_token = output[:, 0]
-            patch_tokens = output[:, 5:]
-            embedding = torch.cat([class_token, patch_tokens.mean(1)], dim=-1)
+            class_token = output[:, 0]  # size: batch x 1280
+            patch_tokens = output[
+                :, 5:
+            ]  # size: batch x 256 x 1280 (skip register tokens 1-4)
+            embedding = torch.cat(
+                [class_token, patch_tokens.mean(1)], dim=-1
+            )  # size: batch x 2560
             embedding = embedding.to(torch.float16)
 
         return embedding.cpu().tolist()
@@ -119,11 +123,13 @@ class Virchow2:
     async def root(self, request: Request) -> list[float]:
         data = await asyncio.to_thread(self.lz4.decompress, await request.body())
 
+        # Reshape to (height, width, channels) - RGB image
         image = np.frombuffer(data, dtype=np.uint8).reshape(
             self.tile_size, self.tile_size, 3
         )
 
-        return await self.predict(image)
+        results = await self.predict(image)
+        return results[0]
 
 
 app = Virchow2.bind()

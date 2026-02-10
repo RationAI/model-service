@@ -28,7 +28,7 @@ class SemanticSegmentation:
 
         self.lz4 = lz4.frame
 
-    async def reconfigure(self, config: Config) -> None:
+    def reconfigure(self, config: Config) -> None:
         import importlib
 
         import onnxruntime as ort
