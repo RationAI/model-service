@@ -22,10 +22,7 @@ class Config(TypedDict):
 fastapi = FastAPI()
 
 
-@serve.deployment(
-    num_replicas="auto",
-    ray_actor_options={"num_gpus": 1},
-)
+@serve.deployment(num_replicas="auto")
 @serve.ingress(fastapi)
 class Virchow2:
     """Virchow2 foundation model for pathology."""
@@ -129,7 +126,7 @@ class Virchow2:
         )
 
         results = await self.predict(image)
-        return results[0]
+        return results  # type: ignore[attr-defined]
 
 
-app = Virchow2.bind()
+app = Virchow2.bind()  # type: ignore[attr-defined]
