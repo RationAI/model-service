@@ -39,6 +39,7 @@ class Virchow2:
         self.model: torch.nn.Module | None = None
         self.transforms: Any = None
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.tile_size: int = 0
 
     def reconfigure(self, config: Config) -> None:
         import importlib
@@ -55,6 +56,7 @@ class Virchow2:
         logger.info(f"Loading Virchow2 model from {repo_id}...")
         provider(**config["model"])
 
+        # Load model with official architecture
         self.model = timm.create_model(
             f"hf-hub:{repo_id}",
             pretrained=True,
@@ -63,11 +65,13 @@ class Virchow2:
             act_layer=torch.nn.SiLU,
         )
         self.model = self.model.to(self.device).eval()
-        logger.info("Virchow2 model loaded and moved to GPU.")
 
+        # Get transforms from model config
         self.transforms = create_transform(
             **resolve_data_config(self.model.pretrained_cfg, model=self.model)
         )
+
+        logger.info("Virchow2 model loaded and moved to GPU.")
 
         # Configure batching
         self.predict.set_max_batch_size(config["max_batch_size"])  # type: ignore[attr-defined]
@@ -75,15 +79,14 @@ class Virchow2:
 
         # Warmup
         logger.info("Starting warmup...")
+        dummy_batch = torch.randn(
+            1, 3, self.tile_size, self.tile_size, device=self.device
+        )
         with (
             torch.inference_mode(),
             torch.autocast(device_type="cuda", dtype=torch.float16),
         ):
-            # Create a dummy input tensor
-            dummy_input = torch.randn(
-                1, 3, self.tile_size, self.tile_size, device=self.device
-            )
-            self.model(dummy_input)
+            self.model(dummy_batch)
         logger.info("Warmup complete.")
 
     @serve.batch
@@ -105,16 +108,18 @@ class Virchow2:
         ):
             output = self.model(tensors)
 
-            class_token = output[:, 0]  # size: batch x 1280
+            # Extract embeddings as per official model card
+            class_token = output[:, 0]  # CLS token: batch x 1280
             patch_tokens = output[
                 :, 5:
-            ]  # size: batch x 256 x 1280 (skip register tokens 1-4)
-            embedding = torch.cat(
-                [class_token, patch_tokens.mean(1)], dim=-1
-            )  # size: batch x 2560
-            embedding = embedding.to(torch.float16)
+            ]  # Skip register tokens (1-4): batch x 256 x 1280
 
-        return embedding.cpu().tolist()
+            # Concatenate CLS token with mean of patch tokens
+            embedding = torch.cat(
+                [class_token, patch_tokens.mean(dim=1)], dim=-1
+            )  # batch x 2560
+
+        return embedding.cpu().float().tolist()
 
     @fastapi.post("/")
     async def root(self, request: Request) -> list[float]:
