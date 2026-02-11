@@ -16,7 +16,6 @@ class Config(TypedDict):
     max_batch_size: int
     batch_wait_timeout_s: float
     intra_op_num_threads: int
-    trt_max_workspace_size: int
 
 
 fastapi = FastAPI()
@@ -61,13 +60,15 @@ class BinaryClassifier:
         # - trt_builder_optimization_level: Set to 5 for maximum optimization (default: 3, which might miss optimal kernels)
         # - trt_max_workspace_size: Memory available for TensorRT to find optimal kernels (default: 1GB)
         #   Default 1GB is insufficient for high-resolution processing, restricting valid kernels.
-        #   This must be explicitly configured via 'trt_max_workspace_size' in the config.
+        #   We default to 8GB as a reasonable balance, but can be overridden via config.
         trt_options = {
             "device_id": 0,
             "trt_fp16_enable": True,
             "trt_engine_cache_enable": True,
             "trt_engine_cache_path": cache_path,
-            "trt_max_workspace_size": int(config["trt_max_workspace_size"]),
+            "trt_max_workspace_size": config.get(
+                "trt_max_workspace_size", 8 * 1024 * 1024 * 1024
+            ),  # type: ignore[typeddict-item]
             "trt_builder_optimization_level": 5,
             "trt_timing_cache_enable": True,
             "trt_profile_min_shapes": min_shape,
