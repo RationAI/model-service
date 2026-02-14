@@ -119,7 +119,8 @@ class Virchow2:
                 [class_token, patch_tokens.mean(dim=1)], dim=-1
             )  # batch x 2560
 
-        return embedding.cpu().float().tolist()
+        # Convert to fp16 for efficiency as recommended in official docs
+        return embedding.half().cpu().tolist()
 
     @fastapi.post("/")
     async def root(self, request: Request) -> list[float]:
