@@ -63,7 +63,6 @@ spec:
                 _target_: providers.model_provider:mlflow
                 artifact_uri: mlflow-artifacts:/10/39f821ed5b964c71a603cc6db196f9fd/artifacts/checkpoints/epoch=19-step=32020/model.onnx/model.onnx
 
-
       - name: heatmap-builder
         import_path: builders.heatmap_builder:app
         route_prefix: /heatmap-builder
@@ -91,11 +90,6 @@ spec:
           config:
             setup_timeout_seconds: 1800
           working_dir: https://gitlab.ics.muni.cz/rationai/infrastructure/model-service/-/archive/master/model-service-master.zip
-          pip:
-            - https://download.pytorch.org/whl/cu118/torch-2.4.0%2Bcu118-cp312-cp312-linux_x86_64.whl
-            - https://download.pytorch.org/whl/cu118/torchvision-0.19.0%2Bcu118-cp312-cp312-linux_x86_64.whl
-            - timm>=1.0.0
-            - huggingface-hub>=0.23.0
           env_vars:
             HF_TOKEN: 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
         deployments:
