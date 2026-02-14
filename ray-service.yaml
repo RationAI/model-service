@@ -19,21 +19,20 @@ spec:
               max_replicas: 4
               target_ongoing_requests: 32
             ray_actor_options:
-              num_cpus: 6
-              memory: 6442450944 # 6 GiB
+              num_cpus: 4
+              num_gpus: 1
+              memory: 4294967296  # 4 GiB
               runtime_env:
                 env_vars:
                   MLFLOW_TRACKING_URI: http://mlflow.rationai-mlflow:5000
             user_config:
               tile_size: 512
-              max_batch_size: 32
-              batch_wait_timeout_s: 0.5
-              mean: [228.5544, 178.8584, 219.8793]
-              std: [27.8285, 51.4639, 26.4458]
-              intra_op_num_threads: 5
+              max_batch_size: 16
+              batch_wait_timeout_s: 0.01
+              intra_op_num_threads: 4
               model:
                 _target_: providers.model_provider:mlflow
-                artifact_uri: mlflow-artifacts:/65/aebc892f526047249b972f200bef4381/artifacts/checkpoints/epoch=0-step=6972/model.onnx
+                artifact_uri: mlflow-artifacts:/65/aebc892f526047249b972f200bef4381/artifacts/checkpoints/epoch=0-step=6972/prostate_model_norm.onnx
 
       - name: episeg-1
         import_path: models.semantic_segmentation:app
@@ -43,27 +42,26 @@ spec:
         deployments:
           - name: SemanticSegmentation
             max_ongoing_requests: 16
-            max_queued_requests: 64
+            max_queued_requests: 32
             autoscaling_config:
               min_replicas: 0
-              max_replicas: 4
-              target_ongoing_requests: 4
+              max_replicas: 2
+              target_ongoing_requests: 8
             ray_actor_options:
-              num_cpus: 12
+              num_cpus: 4
               memory: 12884901888 # 12 GiB
+              num_gpus: 1
               runtime_env:
                 env_vars:
                   MLFLOW_TRACKING_URI: http://mlflow.rationai-mlflow:5000
             user_config:
               tile_size: 1024
               mpp: 0.468
-              max_batch_size: 2
-              batch_wait_timeout_s: 0.5
-              intra_op_num_threads: 11
+              max_batch_size: 8
+              batch_wait_timeout_s: 0.1
               model:
                 _target_: providers.model_provider:mlflow
                 artifact_uri: mlflow-artifacts:/10/39f821ed5b964c71a603cc6db196f9fd/artifacts/checkpoints/epoch=19-step=32020/model.onnx/model.onnx
-
 
       - name: heatmap-builder
         import_path: builders.heatmap_builder:app
@@ -76,14 +74,46 @@ spec:
             max_queued_requests: 64
             autoscaling_config:
               min_replicas: 0
-              max_replicas: 2
+              max_replicas: 4
               target_ongoing_requests: 2
             ray_actor_options:
-              num_cpus: 4
+              num_cpus: 8
               memory: 12884901888 # 12 GiB
             user_config:
-              num_threads: 4
-              max_concurrent_tasks: 8
+              num_threads: 8
+              max_concurrent_tasks: 24
+
+      - name: virchow2
+        import_path: models.virchow2:app
+        route_prefix: /virchow2        
+        runtime_env:
+          config:
+            setup_timeout_seconds: 1800
+          working_dir: https://gitlab.ics.muni.cz/rationai/infrastructure/model-service/-/archive/master/model-service-master.zip
+          env_vars:
+            HF_TOKEN: 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
+        deployments:
+          - name: Virchow2
+            max_ongoing_requests: 32
+            max_queued_requests: 64
+            autoscaling_config:
+              min_replicas: 0
+              max_replicas: 1
+              target_ongoing_requests: 16
+            ray_actor_options:
+              num_cpus: 4
+              num_gpus: 1
+              memory: 8589934592 # 8 GiB
+              runtime_env:
+                env_vars:
+                   HF_HOME: "/mnt/huggingface_cache"
+            user_config:
+              tile_size: 224
+              max_batch_size: 16
+              batch_wait_timeout_s: 0.1
+              model:
+                _target_: providers.model_provider:huggingface
+                repo_id: paige-ai/Virchow2
 
   rayClusterConfig:
     rayVersion: 2.53.0
@@ -118,6 +148,9 @@ spec:
                 requests:
                   cpu: 0
                   memory: 4Gi
+              env:
+                - name: HTTPS_PROXY
+                  value: http://proxy.ics.muni.cz:3128
               ports:
                 - containerPort: 6379
                   name: gcs-server
@@ -151,11 +184,11 @@ spec:
                 imagePullPolicy: Always
                 resources:
                   limits:
-                    cpu: 32
-                    memory: 32Gi
+                    cpu: 8
+                    memory: 16Gi
                   requests:
-                    cpu: 32
-                    memory: 32Gi
+                    cpu: 8
+                    memory: 16Gi
                 env:
                   - name: HTTPS_PROXY
                     value: http://proxy.ics.muni.cz:3128
@@ -177,6 +210,10 @@ spec:
                     mountPath: /mnt/projects
                   - name: bioptic-tree
                     mountPath: /mnt/bioptic_tree
+                  - name: trt-cache-volume
+                    mountPath: /mnt/cache
+                  - name: huggingface-cache
+                    mountPath: /mnt/huggingface_cache
 
             volumes:
               - name: data
@@ -191,3 +228,82 @@ spec:
               - name: bioptic-tree
                 persistentVolumeClaim:
                   claimName: bioptictree-ro
+              - name: trt-cache-volume
+                persistentVolumeClaim:
+                  claimName: tensorrt-cache-pvc
+              - name: huggingface-cache
+                persistentVolumeClaim:
+                  claimName: huggingface-cache-pvc
+
+      - groupName: gpu-workers
+        replicas: 0
+        minReplicas: 0
+        maxReplicas: 2
+        template:
+          spec:
+            securityContext:
+              fsGroup: 1000
+              fsGroupChangePolicy: OnRootMismatch
+              runAsNonRoot: true
+              runAsUser: 1000
+              seccompProfile:
+                type: RuntimeDefault
+            nodeSelector:
+              nvidia.com/gpu.product: NVIDIA-A40
+            containers:
+              - name: ray-worker
+                image: cerit.io/rationai/model-service:2.53.0-gpu
+                imagePullPolicy: Always
+                resources:
+                  limits:
+                    cpu: 8
+                    memory: 24Gi
+                    nvidia.com/gpu: 1
+                  requests:
+                    cpu: 8
+                    memory: 24Gi
+                env:
+                  - name: HTTPS_PROXY
+                    value: http://proxy.ics.muni.cz:3128
+                securityContext:
+                  allowPrivilegeEscalation: false
+                  capabilities:
+                    drop: ["ALL"]
+                  runAsUser: 1000
+                lifecycle:
+                  preStop:
+                    exec:
+                      command: ["/bin/sh", "-c", "ray stop"]
+                volumeMounts:
+                  - name: data
+                    mountPath: /mnt/data
+                  - name: public-data
+                    mountPath: /mnt/data/Public
+                  - name: projects
+                    mountPath: /mnt/projects
+                  - name: bioptic-tree
+                    mountPath: /mnt/bioptic_tree
+                  - name: trt-cache-volume
+                    mountPath: /mnt/cache
+                  - name: huggingface-cache
+                    mountPath: /mnt/huggingface_cache
+
+            volumes:
+              - name: data
+                persistentVolumeClaim:
+                  claimName: data-ro
+              - name: public-data
+                persistentVolumeClaim:
+                  claimName: rationai-data-ro-pvc-jobs
+              - name: projects
+                persistentVolumeClaim:
+                  claimName: projects-rw
+              - name: bioptic-tree
+                persistentVolumeClaim:
+                  claimName: bioptictree-ro
+              - name: trt-cache-volume
+                persistentVolumeClaim:
+                  claimName: tensorrt-cache-pvc
+              - name: huggingface-cache
+                persistentVolumeClaim:
+                  claimName: huggingface-cache-pvc
