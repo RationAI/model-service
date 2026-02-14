@@ -53,4 +53,9 @@ RUN sudo sh -c 'echo "/usr/local/lib" > /etc/ld.so.conf.d/custom-libs.conf' && \
     sudo sh -c 'echo "/home/ray/anaconda3/lib/python3.12/site-packages/nvidia/cudnn/lib" > /etc/ld.so.conf.d/nvidia-libs.conf' && \
     sudo ldconfig
 
-RUN pip install --no-cache-dir onnxruntime-gpu tensorrt lz4 ratiopath "mlflow<3.0"
+RUN pip install --no-cache-dir \
+    onnxruntime-gpu tensorrt lz4 ratiopath "mlflow<3.0" \
+    https://download.pytorch.org/whl/cu118/torch-2.4.0%2Bcu118-cp312-cp312-linux_x86_64.whl \
+    https://download.pytorch.org/whl/cu118/torchvision-0.19.0%2Bcu118-cp312-cp312-linux_x86_64.whl \
+    "timm>=1.0.0" \
+    "huggingface-hub>=0.23.0"
