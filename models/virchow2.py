@@ -73,7 +73,6 @@ class Virchow2:
 
         logger.info("Virchow2 model loaded and moved to GPU.")
 
-        # Configure batching
         self.predict.set_max_batch_size(config["max_batch_size"])  # type: ignore[attr-defined]
         self.predict.set_batch_wait_timeout_s(config["batch_wait_timeout_s"])  # type: ignore[attr-defined]
 
@@ -96,7 +95,6 @@ class Virchow2:
         if self.model is None or self.transforms is None:
             raise RuntimeError("Model or transforms not initialized")
 
-        # Convert numpy arrays to PIL Images and apply transforms
         pil_images = [Image.fromarray(img) for img in images]
         tensors = torch.stack([self.transforms(img) for img in pil_images]).to(
             self.device
@@ -119,7 +117,6 @@ class Virchow2:
                 [class_token, patch_tokens.mean(dim=1)], dim=-1
             )  # batch x 2560
 
-        # Convert to fp16 for efficiency as recommended in official docs
         return embedding.half().cpu().tolist()
 
     @fastapi.post("/")
