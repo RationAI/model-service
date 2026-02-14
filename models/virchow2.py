@@ -129,7 +129,7 @@ class Virchow2:
         )
 
         results = await self.predict(image)
-        return results  # type: ignore[attr-defined]
+        return results
 
 
 app = Virchow2.bind()  # type: ignore[attr-defined]
