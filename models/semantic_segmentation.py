@@ -1,4 +1,3 @@
-import asyncio
 import os
 from typing import Any, TypedDict
 
@@ -105,12 +104,6 @@ class SemanticSegmentation:
 
         self.predict.set_max_batch_size(config["max_batch_size"])  # type: ignore[attr-defined]
         self.predict.set_batch_wait_timeout_s(config["batch_wait_timeout_s"])  # type: ignore[attr-defined]
-
-        # Warmup
-        dummy_image = np.random.randint(
-            0, 256, (3, self.tile_size, self.tile_size), dtype=np.uint8
-        )
-        asyncio.get_event_loop().run_until_complete(self.predict(dummy_image))
 
     def get_config(self) -> dict[str, Any]:
         return {"tile_size": self.tile_size, "mpp": self.mpp}
