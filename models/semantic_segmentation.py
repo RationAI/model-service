@@ -14,6 +14,7 @@ class Config(TypedDict):
     max_batch_size: int
     batch_wait_timeout_s: float
     intra_op_num_threads: int
+    trt_cache_path: str
 
 
 fastapi = FastAPI()
@@ -37,7 +38,7 @@ class SemanticSegmentation:
         self.tile_size = config["tile_size"]
         self.mpp = config["mpp"]
 
-        cache_path = "/mnt/cache/trt_cache"
+        cache_path = config["trt_cache_path"]
         os.makedirs(cache_path, exist_ok=True)
 
         min_shape = f"input:1x3x{self.tile_size}x{self.tile_size}"
@@ -77,7 +78,9 @@ class SemanticSegmentation:
         sess_options.intra_op_num_threads = config["intra_op_num_threads"]
         sess_options.inter_op_num_threads = 1
 
-        # Enable graph optimizations
+        # Enable all graph optimizations (constant folding, node fusion, etc.) for maximum inference performance.
+        # ORT_SEQUENTIAL ensures ops run one at a time within a session, which avoids inter-op parallelism
+        # overhead and is preferred when batching is handled externally (as done here via @serve.batch).
         sess_options.graph_optimization_level = (
             ort.GraphOptimizationLevel.ORT_ENABLE_ALL
         )
