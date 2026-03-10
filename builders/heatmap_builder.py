@@ -100,6 +100,7 @@ class HeatmapBuilder:
 
             await asyncio.wait(tasks)
 
+        mask_builder.flush()
         mask_builder.save(
             output_path,
             tile_height=output_bigtiff_tile_height,
