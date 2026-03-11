@@ -11,7 +11,7 @@ on:
           - cpu
           - gpu
       tag:
-        description: "Docker image tag (e.g., latest, 2.53.0, 2.53.0-gpu)"
+        description: "Docker image tag (e.g., latest, 2.53.0)"
         required: true
         type: string
 
