@@ -1,4 +1,4 @@
-name: Build and Push Docker Images
+name: 🐳 Build and Push Docker Images
 
 on:
   workflow_dispatch:
@@ -43,9 +43,10 @@ jobs:
           fi
 
       - name: Build and push image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./docker/Dockerfile.${{ inputs.image }}
           push: true
           tags: cerit.io/rationai/model-service:${{ steps.set_tag.outputs.image_tag }}
+          platforms: linux/amd64
