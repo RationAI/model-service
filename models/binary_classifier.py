@@ -111,11 +111,6 @@ class BinaryClassifier:
         self.predict.set_max_batch_size(config["max_batch_size"])  # type: ignore[attr-defined]
         self.predict.set_batch_wait_timeout_s(config["batch_wait_timeout_s"])  # type: ignore[attr-defined]
 
-        dummy_shape = (config["max_batch_size"], 3, self.tile_size, self.tile_size)
-        dummy_input = np.random.randint(0, 256, dummy_shape, dtype=np.uint8)
-
-        self.session.run([self.output_name], {self.input_name: dummy_input})
-
     @serve.batch
     async def predict(self, images: list[NDArray[np.uint8]]) -> list[float]:
         """Run inference on a batch of images."""

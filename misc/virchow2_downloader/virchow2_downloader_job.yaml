@@ -41,8 +41,6 @@ spec:
                   key: token
             - name: HTTPS_PROXY
               value: "http://proxy.ics.muni.cz:3128"
-            - name: HTTP_PROXY
-              value: "http://proxy.ics.muni.cz:3128"
             - name: TORCH_HOME
               value: /tmp/torch
             - name: TORCHINDUCTOR_CACHE_DIR

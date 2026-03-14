@@ -76,18 +76,6 @@ class Virchow2:
         self.predict.set_max_batch_size(config["max_batch_size"])  # type: ignore[attr-defined]
         self.predict.set_batch_wait_timeout_s(config["batch_wait_timeout_s"])  # type: ignore[attr-defined]
 
-        # Warmup
-        logger.info("Starting warmup...")
-        dummy_batch = torch.randn(
-            1, 3, self.tile_size, self.tile_size, device=self.device
-        )
-        with (
-            torch.inference_mode(),
-            torch.autocast(device_type="cuda", dtype=torch.float16),
-        ):
-            self.model(dummy_batch)
-        logger.info("Warmup complete.")
-
     @serve.batch
     async def predict(self, images: list[NDArray[np.uint8]]) -> list[list[float]]:
         from PIL import Image
