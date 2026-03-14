@@ -13,7 +13,6 @@ class Config(TypedDict):
     model: dict[str, Any]
     max_batch_size: int
     batch_wait_timeout_s: float
-    intra_op_num_threads: int
     trt_cache_path: str
 
 
