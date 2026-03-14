@@ -29,7 +29,6 @@ spec:
               tile_size: 512
               max_batch_size: 16
               batch_wait_timeout_s: 0.01
-              intra_op_num_threads: 4
               model:
                 _target_: providers.model_provider:mlflow
                 artifact_uri: mlflow-artifacts:/65/aebc892f526047249b972f200bef4381/artifacts/checkpoints/epoch=0-step=6972/prostate_model_norm.onnx

@@ -15,7 +15,6 @@ class Config(TypedDict):
     model: dict[str, Any]
     max_batch_size: int
     batch_wait_timeout_s: float
-    intra_op_num_threads: int
 
 
 fastapi = FastAPI()
@@ -67,7 +66,6 @@ class BinaryClassifier:
 
         # Configure ONNX Runtime session
         sess_options = ort.SessionOptions()
-        sess_options.intra_op_num_threads = config["intra_op_num_threads"]
         sess_options.inter_op_num_threads = 1
 
         # Enable graph optimizations
