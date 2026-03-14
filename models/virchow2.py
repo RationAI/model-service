@@ -2,14 +2,9 @@ import asyncio
 from typing import Any, TypedDict
 
 import numpy as np
-import timm
-import torch
 from fastapi import FastAPI, Request
 from numpy.typing import NDArray
 from ray import serve
-from timm.data.config import resolve_data_config
-from timm.data.transforms_factory import create_transform
-from timm.layers.mlp import SwiGLUPacked
 
 
 class Config(TypedDict):
@@ -35,8 +30,11 @@ class Virchow2:
         # Enforce offline mode for timm/huggingface_hub
         os.environ["HF_HUB_OFFLINE"] = "1"
 
+        import torch
+
+        self.torch = torch
         self.lz4 = lz4.frame
-        self.model: torch.nn.Module | None = None
+        self.model: Any = None
         self.transforms: Any = None
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.tile_size: int = 0
@@ -44,6 +42,13 @@ class Virchow2:
     def reconfigure(self, config: Config) -> None:
         import importlib
         import logging
+
+        import timm
+        from timm.data.config import resolve_data_config
+        from timm.data.transforms_factory import create_transform
+        from timm.layers.mlp import SwiGLUPacked
+
+        torch = self.torch
 
         logger = logging.getLogger("ray.serve")
         self.tile_size = config["tile_size"]
@@ -82,6 +87,8 @@ class Virchow2:
 
         if self.model is None or self.transforms is None:
             raise RuntimeError("Model or transforms not initialized")
+
+        torch = self.torch
 
         pil_images = [Image.fromarray(img) for img in images]
         tensors = torch.stack([self.transforms(img) for img in pil_images]).to(
