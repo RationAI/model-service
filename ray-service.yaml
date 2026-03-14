@@ -22,9 +22,6 @@ spec:
               num_cpus: 4
               num_gpus: 1
               memory: 4294967296  # 4 GiB
-              num_cpus: 4
-              num_gpus: 1
-              memory: 4294967296  # 4 GiB
               runtime_env:
                 env_vars:
                   MLFLOW_TRACKING_URI: http://mlflow.rationai-mlflow:5000
@@ -37,7 +34,6 @@ spec:
               model:
                 _target_: providers.model_provider:mlflow
                 artifact_uri: mlflow-artifacts:/65/aebc892f526047249b972f200bef4381/artifacts/checkpoints/epoch=0-step=6972/prostate_model_norm.onnx
-                artifact_uri: mlflow-artifacts:/65/aebc892f526047249b972f200bef4381/artifacts/checkpoints/epoch=0-step=6972/prostate_model_norm.onnx
 
       - name: episeg-1
         import_path: models.semantic_segmentation:app
@@ -48,18 +44,13 @@ spec:
           - name: SemanticSegmentation
             max_ongoing_requests: 16
             max_queued_requests: 32
-            max_queued_requests: 32
             autoscaling_config:
               min_replicas: 0
               max_replicas: 2
               target_ongoing_requests: 8
-              max_replicas: 2
-              target_ongoing_requests: 8
             ray_actor_options:
               num_cpus: 4
-              num_cpus: 4
               memory: 12884901888 # 12 GiB
-              num_gpus: 1
               num_gpus: 1
               runtime_env:
                 env_vars:
@@ -87,10 +78,8 @@ spec:
             autoscaling_config:
               min_replicas: 0
               max_replicas: 4
-              max_replicas: 4
               target_ongoing_requests: 2
             ray_actor_options:
-              num_cpus: 8
               num_cpus: 8
               memory: 12884901888 # 12 GiB
             user_config:
