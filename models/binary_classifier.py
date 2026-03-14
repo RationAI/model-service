@@ -68,7 +68,7 @@ class BinaryClassifier:
             "trt_engine_cache_path": cache_path,
             "trt_max_workspace_size": config.get(
                 "trt_max_workspace_size", 8 * 1024 * 1024 * 1024
-            ),  # type: ignore[typeddict-item]
+            ),
             "trt_builder_optimization_level": 5,
             "trt_timing_cache_enable": True,
             "trt_profile_min_shapes": min_shape,
