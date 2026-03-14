@@ -90,8 +90,6 @@ spec:
           config:
             setup_timeout_seconds: 1800
           working_dir: https://gitlab.ics.muni.cz/rationai/infrastructure/model-service/-/archive/master/model-service-master.zip
-          env_vars:
-            HF_TOKEN: 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
         deployments:
           - name: Virchow2
             max_ongoing_requests: 160
@@ -265,6 +263,11 @@ spec:
                 env:
                   - name: HTTPS_PROXY
                     value: http://proxy.ics.muni.cz:3128
+                  - name: HF_TOKEN
+                    valueFrom:
+                      secretKeyRef:
+                        name: huggingface-secret
+                        key: token
                 securityContext:
                   allowPrivilegeEscalation: false
                   capabilities:
