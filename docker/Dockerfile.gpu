@@ -53,7 +53,14 @@ RUN sudo sh -c 'echo "/usr/local/lib" > /etc/ld.so.conf.d/custom-libs.conf' && \
     sudo sh -c 'echo "/home/ray/anaconda3/lib/python3.12/site-packages/nvidia/cudnn/lib" > /etc/ld.so.conf.d/nvidia-libs.conf' && \
     sudo ldconfig
 
-RUN pip install --no-cache-dir onnxruntime-gpu tensorrt lz4 ratiopath "mlflow<3.0" \
-    torch==2.4.0 torchvision==0.19.0 \
+RUN pip install --no-cache-dir \
+    --extra-index-url https://pypi.nvidia.com \
+    onnxruntime-gpu tensorrt-cu12==10.3.0 lz4 ratiopath "mlflow<3.0"
+
+RUN pip install --no-cache-dir \
+    torch==2.4.0+cu121 torchvision==0.19.0+cu121 \
+    --index-url https://download.pytorch.org/whl/cu121
+
+RUN pip install --no-cache-dir \
     "timm>=1.0.0" \
     "huggingface-hub>=0.23.0"
