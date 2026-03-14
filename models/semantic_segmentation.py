@@ -13,6 +13,8 @@ class Config(TypedDict):
     model: dict[str, Any]
     max_batch_size: int
     batch_wait_timeout_s: float
+    intra_op_num_threads: int
+    trt_cache_path: str
 
 
 fastapi = FastAPI()
@@ -36,7 +38,7 @@ class SemanticSegmentation:
         self.tile_size = config["tile_size"]
         self.mpp = config["mpp"]
 
-        cache_path = "/mnt/cache/trt_cache"
+        cache_path = config["trt_cache_path"]
         os.makedirs(cache_path, exist_ok=True)
 
         min_shape = f"input:1x3x{self.tile_size}x{self.tile_size}"
@@ -47,12 +49,23 @@ class SemanticSegmentation:
             f"input:{config['max_batch_size']}x3x{self.tile_size}x{self.tile_size}"
         )
 
+        # TensorRT optimization options:
+        # - trt_fp16_enable: Enable FP16 mode for faster inference on Tensor Cores (default: False is slower)
+        # - trt_engine_cache_enable: Cache TensorRT engines to disk to avoid rebuilding on restart (default: False rebuilds every time)
+        # - trt_engine_cache_path: Directory to store cached engines
+        # - trt_timing_cache_enable: Cache kernel timing info to speed up subsequent engine builds (default: False is slower)
+        # - trt_builder_optimization_level: Set to 5 for maximum optimization (default: 3, which might miss optimal kernels)
+        # - trt_max_workspace_size: Memory available for TensorRT to find optimal kernels (default: 1GB)
+        #   Default 1GB is insufficient for high-resolution processing, restricting valid kernels.
+        #   We default to 8GB as a reasonable balance, but can be overridden via config.
         trt_options = {
             "device_id": 0,
             "trt_fp16_enable": True,
             "trt_engine_cache_enable": True,
             "trt_engine_cache_path": cache_path,
-            "trt_max_workspace_size": 4 * 1024 * 1024 * 1024,  # 4GB
+            "trt_max_workspace_size": config.get(
+                "trt_max_workspace_size", 8 * 1024 * 1024 * 1024
+            ),  # type: ignore[typeddict-item]
             "trt_builder_optimization_level": 5,
             "trt_timing_cache_enable": True,
             "trt_profile_min_shapes": min_shape,
@@ -64,7 +77,9 @@ class SemanticSegmentation:
         sess_options = ort.SessionOptions()
         sess_options.inter_op_num_threads = 1
 
-        # Enable graph optimizations
+        # Enable all graph optimizations (constant folding, node fusion, etc.) for maximum inference performance.
+        # ORT_SEQUENTIAL ensures ops run one at a time within a session, which avoids inter-op parallelism
+        # overhead and is preferred when batching is handled externally (as done here via @serve.batch).
         sess_options.graph_optimization_level = (
             ort.GraphOptimizationLevel.ORT_ENABLE_ALL
         )
@@ -105,7 +120,7 @@ class SemanticSegmentation:
     async def predict(
         self, images: list[NDArray[np.uint8]]
     ) -> list[NDArray[np.float16]]:
-        batch = np.stack(images, axis=0)
+        batch = np.stack(images, axis=0, dtype=np.uint8)
         outputs = self.session.run([self.output_name], {self.input_name: batch})
 
         return list(outputs[0].astype(np.float16))
