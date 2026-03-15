@@ -9,20 +9,18 @@ def huggingface(repo_id: str, filename: str | None = None) -> str:
 
     from huggingface_hub import hf_hub_download, snapshot_download
 
-    cache_dir = os.environ.get("HF_HOME", "/mnt/huggingface_cache")
-    os.makedirs(cache_dir, exist_ok=True)
-    os.environ["HF_HOME"] = cache_dir
+    hf_home = os.environ.get("HF_HOME", "/mnt/huggingface_cache")
+    os.makedirs(hf_home, exist_ok=True)
+    os.environ["HF_HOME"] = hf_home
 
     if filename:
         return hf_hub_download(
             repo_id=repo_id,
             filename=filename,
-            cache_dir=cache_dir,
             local_files_only=True,
         )
     else:
         return snapshot_download(
             repo_id=repo_id,
-            cache_dir=cache_dir,
             local_files_only=True,
         )
