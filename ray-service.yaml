@@ -88,7 +88,7 @@ spec:
 
       - name: virchow2
         import_path: models.virchow2:app
-        route_prefix: /virchow2        
+        route_prefix: /virchow2
         runtime_env:
           config:
             setup_timeout_seconds: 1800
