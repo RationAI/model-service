@@ -95,9 +95,12 @@ class Virchow2:
             self.device
         )
 
+        device_type = self.device.type
+        autocast_dtype = torch.float16 if device_type == "cuda" else torch.bfloat16
+
         with (
             torch.inference_mode(),
-            torch.autocast(device_type="cuda", dtype=torch.float16),
+            torch.autocast(device_type=device_type, dtype=autocast_dtype),
         ):
             output = self.model(tensors)
 
