@@ -1,7 +1,7 @@
 apiVersion: ray.io/v1
 kind: RayService
 metadata:
-  name: rayservice-model
+  name: rayservice-model-prostate
 spec:
   serveConfigV2: |
     applications:
@@ -9,7 +9,7 @@ spec:
         import_path: models.binary_classifier:app
         route_prefix: /prostate-classifier-1
         runtime_env:
-          working_dir: https://gitlab.ics.muni.cz/rationai/infrastructure/model-service/-/archive/master/model-service-master.zip
+          working_dir: https://github.com/RationAI/model-service/archive/refs/heads/feature/virchow2-model.zip
         deployments:
           - name: BinaryClassifier
             max_ongoing_requests: 64
@@ -17,19 +17,18 @@ spec:
             autoscaling_config:
               min_replicas: 0
               max_replicas: 4
-              target_ongoing_requests: 32
+              target_ongoing_requests: 16
             ray_actor_options:
-              num_cpus: 4
+              num_cpus: 8
               num_gpus: 1
-              memory: 4294967296  # 4 GiB
+              memory: 8589934592 # 8 GiB
               runtime_env:
                 env_vars:
                   MLFLOW_TRACKING_URI: http://mlflow.rationai-mlflow:5000
             user_config:
               tile_size: 512
               max_batch_size: 16
-              batch_wait_timeout_s: 0.01
-              intra_op_num_threads: 4
+              batch_wait_timeout_s: 0.05
               trt_max_workspace_size: 8589934592 # 8 GiB
               trt_cache_path: /mnt/cache/trt_cache
               model:
@@ -40,15 +39,15 @@ spec:
         import_path: models.semantic_segmentation:app
         route_prefix: /episeg-1
         runtime_env:
-          working_dir: https://gitlab.ics.muni.cz/rationai/infrastructure/model-service/-/archive/master/model-service-master.zip
+          working_dir: https://github.com/RationAI/model-service/archive/refs/heads/feature/virchow2-model.zip
         deployments:
           - name: SemanticSegmentation
-            max_ongoing_requests: 16
-            max_queued_requests: 32
+            max_ongoing_requests: 32
+            max_queued_requests: 256
             autoscaling_config:
               min_replicas: 0
               max_replicas: 2
-              target_ongoing_requests: 8
+              target_ongoing_requests: 12
             ray_actor_options:
               num_cpus: 4
               memory: 12884901888 # 12 GiB
@@ -60,7 +59,8 @@ spec:
               tile_size: 1024
               mpp: 0.468
               max_batch_size: 8
-              batch_wait_timeout_s: 0.1
+              batch_wait_timeout_s: 0.05
+              intra_op_num_threads: 4
               trt_max_workspace_size: 8589934592 # 8 GiB
               trt_cache_path: /mnt/cache/trt_cache
               model:
@@ -72,7 +72,7 @@ spec:
         import_path: builders.heatmap_builder:app
         route_prefix: /heatmap-builder
         runtime_env:
-          working_dir: https://gitlab.ics.muni.cz/rationai/infrastructure/model-service/-/archive/master/model-service-master.zip
+          working_dir: https://github.com/RationAI/model-service/archive/refs/heads/feature/virchow2-model.zip
         deployments:
           - name: HeatmapBuilder
             max_ongoing_requests: 16
@@ -207,6 +207,8 @@ spec:
         replicas: 0
         minReplicas: 0
         maxReplicas: 2
+        rayStartParams:
+          num-gpus: "1"
         template:
           spec:
             securityContext:
@@ -216,17 +218,15 @@ spec:
               runAsUser: 1000
               seccompProfile:
                 type: RuntimeDefault
-            nodeSelector:
-              nvidia.com/gpu.product: NVIDIA-A40
             containers:
               - name: ray-worker
-                image: cerit.io/rationai/model-service:2.53.0-gpu
+                image: cerit.io/rationai/model-service:latest-gpu
                 imagePullPolicy: Always
                 resources:
                   limits:
                     cpu: 8
                     memory: 24Gi
-                    nvidia.com/gpu: 1
+                    nvidia.com/mig-2g.20gb: 1
                   requests:
                     cpu: 8
                     memory: 24Gi
