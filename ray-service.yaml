@@ -108,6 +108,7 @@ spec:
               runtime_env:
                 env_vars:
                    HF_HOME: "/mnt/huggingface_cache"
+                   HF_HUB_OFFLINE: "1"
             user_config:
               tile_size: 224
               max_batch_size: 128

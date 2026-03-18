@@ -55,12 +55,10 @@ RUN sudo sh -c 'echo "/usr/local/lib" > /etc/ld.so.conf.d/custom-libs.conf' && \
 
 RUN pip install --no-cache-dir \
     --extra-index-url https://pypi.nvidia.com \
-    onnxruntime-gpu tensorrt-cu12==10.3.0 lz4 ratiopath "mlflow<3.0"
-
-RUN pip install --no-cache-dir \
-    torch==2.4.0+cu121 torchvision==0.19.0+cu121 \
-    --index-url https://download.pytorch.org/whl/cu121
-
-RUN pip install --no-cache-dir \
+    onnxruntime-gpu tensorrt-cu12 lz4 ratiopath "mlflow<3.0" && \
+    pip install --no-cache-dir \
+    torch torchvision \
+    --index-url https://download.pytorch.org/whl/cu121 && \
+    pip install --no-cache-dir \
     "timm>=1.0.0" \
     "huggingface-hub>=0.23.0"
