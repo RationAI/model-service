@@ -1,9 +1,13 @@
 import asyncio
-from typing import Any, TypedDict
+import logging
+from typing import Any, TypedDict, cast
 
+import lz4.frame
 import numpy as np
-from fastapi import FastAPI, Request
+import torch
+from fastapi import FastAPI, Request, Response
 from numpy.typing import NDArray
+from PIL import Image
 from ray import serve
 
 
@@ -15,6 +19,7 @@ class Config(TypedDict):
 
 
 fastapi = FastAPI()
+logger = logging.getLogger("ray.serve")
 
 
 @serve.deployment(num_replicas="auto")
@@ -23,37 +28,21 @@ class Virchow2:
     """Virchow2 foundation model for pathology."""
 
     def __init__(self) -> None:
-        import os
-
-        import lz4.frame
-
-        # Enforce offline mode for timm/huggingface_hub
-        os.environ["HF_HUB_OFFLINE"] = "1"
-
-        import torch
-
-        self.torch = torch
-        self.lz4 = lz4.frame
-        self.model: Any = None
+        self.model: torch.nn.Module | None = None
         self.transforms: Any = None
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.tile_size: int = 0
 
     def reconfigure(self, config: Config) -> None:
         import importlib
-        import logging
 
         import timm
         from timm.data.config import resolve_data_config
         from timm.data.transforms_factory import create_transform
         from timm.layers.mlp import SwiGLUPacked
 
-        torch = self.torch
-
-        logger = logging.getLogger("ray.serve")
         self.tile_size = config["tile_size"]
 
-        # Load model using the provider
         module_path, attr_name = config["model"].pop("_target_").split(":")
         provider = getattr(importlib.import_module(module_path), attr_name)
         repo_id = config["model"]["repo_id"]
@@ -61,7 +50,6 @@ class Virchow2:
         logger.info(f"Loading Virchow2 model from {repo_id}...")
         provider(**config["model"])
 
-        # Load model with official architecture
         self.model = timm.create_model(
             f"hf-hub:{repo_id}",
             pretrained=True,
@@ -71,7 +59,6 @@ class Virchow2:
         )
         self.model = self.model.to(self.device).eval()
 
-        # Get transforms from model config
         self.transforms = create_transform(
             **resolve_data_config(self.model.pretrained_cfg, model=self.model)
         )
@@ -82,18 +69,16 @@ class Virchow2:
         self.predict.set_batch_wait_timeout_s(config["batch_wait_timeout_s"])  # type: ignore[attr-defined]
 
     @serve.batch
-    async def predict(self, images: list[NDArray[np.uint8]]) -> list[list[float]]:
-        from PIL import Image
-
-        if self.model is None or self.transforms is None:
-            raise RuntimeError("Model or transforms not initialized")
-
-        torch = self.torch
-
-        pil_images = [Image.fromarray(img) for img in images]
-        tensors = torch.stack([self.transforms(img) for img in pil_images]).to(
-            self.device
-        )
+    async def predict(
+        self, inputs: list[torch.Tensor | NDArray[np.float16] | NDArray[np.float32]]
+    ) -> list[NDArray[np.float32]]:
+        tensors = torch.stack(
+            [
+                item if isinstance(item, torch.Tensor) else torch.from_numpy(item)
+                for item in inputs
+            ]
+        ).to(self.device)
+        model = cast("torch.nn.Module", self.model)
 
         device_type = self.device.type
         autocast_dtype = torch.float16 if device_type == "cuda" else torch.bfloat16
@@ -102,32 +87,36 @@ class Virchow2:
             torch.inference_mode(),
             torch.autocast(device_type=device_type, dtype=autocast_dtype),
         ):
-            output = self.model(tensors)
+            output = model(tensors)
+            class_token = output[:, 0]
+            patch_tokens = output[:, 5:]
+            embedding = torch.cat([class_token, patch_tokens.mean(dim=1)], dim=-1)
 
-            # Extract embeddings as per official model card
-            class_token = output[:, 0]  # CLS token: batch x 1280
-            patch_tokens = output[
-                :, 5:
-            ]  # Skip register tokens (1-4): batch x 256 x 1280
-
-            # Concatenate CLS token with mean of patch tokens
-            embedding = torch.cat(
-                [class_token, patch_tokens.mean(dim=1)], dim=-1
-            )  # batch x 2560
-
-        return embedding.half().cpu().tolist()
+        return list(embedding.float().cpu().numpy())
 
     @fastapi.post("/")
-    async def root(self, request: Request) -> list[float]:
-        data = await asyncio.to_thread(self.lz4.decompress, await request.body())
-
-        # Reshape to (height, width, channels) - RGB image
+    async def root(self, request: Request) -> Response:
+        data = await asyncio.to_thread(lz4.frame.decompress, await request.body())
         image = np.frombuffer(data, dtype=np.uint8).reshape(
             self.tile_size, self.tile_size, 3
         )
 
-        results = await self.predict(image)
-        return results
+        requested_dtype = request.headers.get("x-output-dtype", "float32").lower()
+
+        output_dtype = np.dtype(requested_dtype)
+        tensor = self.transforms(Image.fromarray(image))
+        result: NDArray[np.float32] = await self.predict(tensor)
+        output_shape = ",".join(str(d) for d in result.shape)
+
+        return Response(
+            content=lz4.frame.compress(
+                result.astype(output_dtype, copy=False).tobytes()
+            ),
+            media_type="application/octet-stream",
+            headers={
+                "x-output-shape": output_shape,
+            },
+        )
 
 
 app = Virchow2.bind()  # type: ignore[attr-defined]
