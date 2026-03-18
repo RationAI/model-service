@@ -63,8 +63,6 @@ class Virchow2:
             **resolve_data_config(self.model.pretrained_cfg, model=self.model)
         )
 
-        logger.info("Virchow2 model loaded and moved to GPU.")
-
         self.predict.set_max_batch_size(config["max_batch_size"])  # type: ignore[attr-defined]
         self.predict.set_batch_wait_timeout_s(config["batch_wait_timeout_s"])  # type: ignore[attr-defined]
 
