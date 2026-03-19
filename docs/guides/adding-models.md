@@ -30,13 +30,13 @@ class MyModel:
     async def __call__(self, request: Request):
         # Handle inference requests
         data = await request.json()
-    # Process data and return prediction
-    result = self.predict(data)
-    return {"prediction": result}
+        # Process data and return prediction
+        result = self.predict(data)
+        return {"prediction": result}
 
-  def predict(self, data: dict):
-    # Replace with your own inference logic
-    return data
+    def predict(self, data: dict):
+        # Replace with your own inference logic
+        return data
 
 app = MyModel.bind()
 ```
