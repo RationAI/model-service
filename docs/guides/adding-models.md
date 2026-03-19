@@ -243,7 +243,7 @@ spec:
         import_path: models.my_onnx_model:app
         route_prefix: /my-model
         runtime_env:
-          working_dir: https://github.com/RationAI/model-service/archive/refs/heads/master.zip
+          working_dir: https://github.com/RationAI/model-service/archive/refs/heads/main.zip
           pip:
             - onnxruntime>=1.23.2
             - numpy

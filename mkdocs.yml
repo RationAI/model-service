@@ -1,7 +1,7 @@
 site_name: Model Service Documentation
 site_description: Model deployment infrastructure for RationAI using Ray Serve on Kubernetes
 repo_url: https://github.com/RationAI/model-service
-edit_uri: edit/master/docs/
+edit_uri: edit/main/docs/
 
 theme:
   name: material

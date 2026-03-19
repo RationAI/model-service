@@ -33,7 +33,7 @@ serveConfigV2: |
       import_path: models.binary_classifier:app
       route_prefix: /prostate-classifier
       runtime_env:
-        working_dir: https://.../model-service-master.zip
+        working_dir: https://.../model-service-main.zip
         pip:
           - onnxruntime>=1.23.2
 ```
