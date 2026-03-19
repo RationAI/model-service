@@ -98,7 +98,7 @@ model-service/
 
 ## Support
 
-- **Issues:** Report bugs or request features via [GitLab Issues](https://gitlab.ics.muni.cz/rationai/infrastructure/model-service/-/issues)
+- **Issues:** Report bugs or request features via [GitHub Issues](https://github.com/RationAI/model-service/issues)
 - **Contact:** RationAI team at Masaryk University
 
 ## License

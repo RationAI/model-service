@@ -16,7 +16,7 @@ See the [Installation Guide](https://docs.ray.io/en/latest/cluster/kubernetes/ge
 ## Step 1: Clone the Repository
 
 ```bash
-git clone https://gitlab.ics.muni.cz/rationai/infrastructure/model-service.git
+git clone https://github.com/RationAI/model-service.git
 cd model-service
 ```
 

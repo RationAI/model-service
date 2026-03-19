@@ -77,7 +77,7 @@ Model Service is designed for:
 ## Getting Help
 
 - **Documentation**: Browse the guides and reference materials in this documentation
-- **Issues**: Report bugs or request features via [GitLab Issues](https://gitlab.ics.muni.cz/rationai/infrastructure/model-service/-/issues)
+- **Issues**: Report bugs or request features via [GitHub Issues](https://github.com/RationAI/model-service/issues)
 - **Contact**: Reach out to the RationAI team at Masaryk University
 
 ## Next Steps
