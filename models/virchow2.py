@@ -43,12 +43,13 @@ class Virchow2:
 
         self.tile_size = config["tile_size"]
 
-        module_path, attr_name = config["model"].pop("_target_").split(":")
+        model_config = dict(config["model"])
+        module_path, attr_name = model_config.pop("_target_").split(":")
         provider = getattr(importlib.import_module(module_path), attr_name)
-        repo_id = config["model"]["repo_id"]
+        repo_id = model_config["repo_id"]
 
         logger.info(f"Loading Virchow2 model from {repo_id}...")
-        provider(**config["model"])
+        provider(**model_config)
 
         self.model = timm.create_model(
             f"hf-hub:{repo_id}",
