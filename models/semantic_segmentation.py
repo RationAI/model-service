@@ -1,4 +1,6 @@
+import logging
 import os
+import time
 from typing import Any, TypedDict
 
 import numpy as np
@@ -16,9 +18,11 @@ class Config(TypedDict):
     intra_op_num_threads: int
     trt_cache_path: str
     trt_max_workspace_size: int
+    use_tensorrt: bool
 
 
 fastapi = FastAPI()
+logger = logging.getLogger(__name__)
 
 
 @serve.deployment(num_replicas="auto")
@@ -36,8 +40,11 @@ class SemanticSegmentation:
 
         import onnxruntime as ort
 
+        t0 = time.perf_counter()
+
         self.tile_size = config["tile_size"]
         self.mpp = config["mpp"]
+        use_tensorrt = config.get("use_tensorrt", True)
 
         cache_path = config["trt_cache_path"]
         os.makedirs(cache_path, exist_ok=True)
@@ -91,18 +98,38 @@ class SemanticSegmentation:
         model_config = dict(config["model"])
         module_path, attr_name = model_config.pop("_target_").split(":")
         provider = getattr(importlib.import_module(module_path), attr_name)
+        model_path = provider(**model_config)
 
-        self.session = ort.InferenceSession(
-            provider(**model_config),
-            providers=[
+        t_model = time.perf_counter()
+        logger.info(
+            "SemanticSegmentation model provider resolved in %.2fs (use_tensorrt=%s)",
+            t_model - t0,
+            use_tensorrt,
+        )
+
+        if use_tensorrt:
+            providers = [
                 (
                     "TensorrtExecutionProvider",
                     trt_options,
                 ),
                 "CUDAExecutionProvider",
                 "CPUExecutionProvider",
-            ],
+            ]
+        else:
+            providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+
+        self.session = ort.InferenceSession(
+            model_path,
+            providers=providers,
             session_options=sess_options,
+        )
+
+        t_session = time.perf_counter()
+        logger.info(
+            "SemanticSegmentation InferenceSession created in %.2fs (total %.2fs)",
+            t_session - t_model,
+            t_session - t0,
         )
 
         self.input_name = self.session.get_inputs()[0].name
