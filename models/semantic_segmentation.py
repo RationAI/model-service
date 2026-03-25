@@ -1,6 +1,4 @@
-import logging
 import os
-import time
 from typing import Any, TypedDict
 
 import numpy as np
@@ -18,11 +16,9 @@ class Config(TypedDict):
     intra_op_num_threads: int
     trt_cache_path: str
     trt_max_workspace_size: int
-    use_tensorrt: bool
 
 
 fastapi = FastAPI()
-logger = logging.getLogger(__name__)
 
 
 @serve.deployment(num_replicas="auto")
@@ -34,18 +30,14 @@ class SemanticSegmentation:
         import lz4.frame
 
         self.lz4 = lz4.frame
-        self.tile_size = 1024  # default, will be overridden by reconfigure
 
     def reconfigure(self, config: Config) -> None:
         import importlib
 
         import onnxruntime as ort
 
-        t0 = time.perf_counter()
-
         self.tile_size = config["tile_size"]
         self.mpp = config["mpp"]
-        use_tensorrt = config.get("use_tensorrt", True)
 
         cache_path = config["trt_cache_path"]
         os.makedirs(cache_path, exist_ok=True)
@@ -99,42 +91,32 @@ class SemanticSegmentation:
         model_config = dict(config["model"])
         module_path, attr_name = model_config.pop("_target_").split(":")
         provider = getattr(importlib.import_module(module_path), attr_name)
-        model_path = provider(**model_config)
 
-        t_model = time.perf_counter()
-        logger.info(
-            "SemanticSegmentation model provider resolved in %.2fs (use_tensorrt=%s)",
-            t_model - t0,
-            use_tensorrt,
-        )
-
-        if use_tensorrt:
-            providers = [
+        self.session = ort.InferenceSession(
+            provider(**model_config),
+            providers=[
                 (
                     "TensorrtExecutionProvider",
                     trt_options,
                 ),
                 "CUDAExecutionProvider",
                 "CPUExecutionProvider",
-            ]
-        else:
-            providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
-
-        self.session = ort.InferenceSession(
-            model_path,
-            providers=providers,
+            ],
             session_options=sess_options,
-        )
-
-        t_session = time.perf_counter()
-        logger.info(
-            "SemanticSegmentation InferenceSession created in %.2fs (total %.2fs)",
-            t_session - t_model,
-            t_session - t0,
         )
 
         self.input_name = self.session.get_inputs()[0].name
         self.output_name = self.session.get_outputs()[0].name
+
+        # Warm up all batch sizes so TensorRT builds & caches engines eagerly —
+        # before the first real request arrives, not lazily during inference.
+        max_bs = config["max_batch_size"]
+        for bs in range(1, max_bs + 1):
+            warmup_input = np.zeros(
+                (bs, 3, self.tile_size, self.tile_size),
+                dtype=np.uint8,
+            )
+            self.session.run([self.output_name], {self.input_name: warmup_input})
 
         self.predict.set_max_batch_size(config["max_batch_size"])  # type: ignore[attr-defined]
         self.predict.set_batch_wait_timeout_s(config["batch_wait_timeout_s"])  # type: ignore[attr-defined]
