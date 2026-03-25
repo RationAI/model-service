@@ -34,6 +34,7 @@ class SemanticSegmentation:
         import lz4.frame
 
         self.lz4 = lz4.frame
+        self.tile_size = 1024  # default, will be overridden by reconfigure
 
     def reconfigure(self, config: Config) -> None:
         import importlib

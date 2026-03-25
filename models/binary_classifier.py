@@ -34,7 +34,7 @@ class BinaryClassifier:
         import lz4.frame
 
         self.lz4 = lz4.frame
-        self.tile_size = 1024  # default, will be overridden by reconfigure
+        self.tile_size = 512  # default, will be overridden by reconfigure
 
     def reconfigure(self, config: Config) -> None:
         """Load the ONNX model and configure inference settings."""
