@@ -17,6 +17,7 @@ class Config(TypedDict):
     batch_wait_timeout_s: float
     intra_op_num_threads: int
     trt_cache_path: str
+    trt_builder_optimization_level: int
 
 
 fastapi = FastAPI()
@@ -70,7 +71,9 @@ class BinaryClassifier:
             "trt_max_workspace_size": config.get(
                 "trt_max_workspace_size", 8 * 1024 * 1024 * 1024
             ),
-            "trt_builder_optimization_level": 5,
+            "trt_builder_optimization_level": config.get(
+                "trt_builder_optimization_level", 3
+            ),
             "trt_timing_cache_enable": True,
             "trt_profile_min_shapes": min_shape,
             "trt_profile_max_shapes": max_shape,
