@@ -112,15 +112,16 @@ class SemanticSegmentation:
 
         # Warm up all batch sizes so TensorRT builds & caches engines eagerly —
         # before the first real request arrives, not lazily during inference.
-        # Single warmup run — triggers TRT engine build & caches it to disk.
-        self.session.run(
-            [self.output_name],
-            {
-                self.input_name: np.zeros(
-                    (1, 3, self.tile_size, self.tile_size), dtype=np.uint8
-                )
-            },
-        )
+        for bs in [1, config["max_batch_size"]]:
+            self.session.run(
+                [self.output_name],
+                {
+                    self.input_name: np.zeros(
+                        (bs, 3, self.tile_size, self.tile_size),
+                        dtype=np.float32,
+                    )
+                },
+            )
 
         self.predict.set_max_batch_size(config["max_batch_size"])  # type: ignore[attr-defined]
         self.predict.set_batch_wait_timeout_s(config["batch_wait_timeout_s"])  # type: ignore[attr-defined]
