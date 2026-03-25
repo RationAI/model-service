@@ -16,6 +16,7 @@ class Config(TypedDict):
     intra_op_num_threads: int
     trt_cache_path: str
     trt_max_workspace_size: int
+    trt_builder_optimization_level: int
 
 
 fastapi = FastAPI()
@@ -30,6 +31,7 @@ class SemanticSegmentation:
         import lz4.frame
 
         self.lz4 = lz4.frame
+        self.tile_size = 1024  # default, will be overridden by reconfigure
 
     def reconfigure(self, config: Config) -> None:
         import importlib
@@ -110,13 +112,15 @@ class SemanticSegmentation:
 
         # Warm up all batch sizes so TensorRT builds & caches engines eagerly —
         # before the first real request arrives, not lazily during inference.
-        max_bs = config["max_batch_size"]
-        for bs in range(1, max_bs + 1):
-            warmup_input = np.zeros(
-                (bs, 3, self.tile_size, self.tile_size),
-                dtype=np.uint8,
-            )
-            self.session.run([self.output_name], {self.input_name: warmup_input})
+        # Single warmup run — triggers TRT engine build & caches it to disk.
+        self.session.run(
+            [self.output_name],
+            {
+                self.input_name: np.zeros(
+                    (1, 3, self.tile_size, self.tile_size), dtype=np.uint8
+                )
+            },
+        )
 
         self.predict.set_max_batch_size(config["max_batch_size"])  # type: ignore[attr-defined]
         self.predict.set_batch_wait_timeout_s(config["batch_wait_timeout_s"])  # type: ignore[attr-defined]
