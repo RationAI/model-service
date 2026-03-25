@@ -15,6 +15,7 @@ class Config(TypedDict):
     batch_wait_timeout_s: float
     intra_op_num_threads: int
     trt_cache_path: str
+    trt_max_workspace_size: int
 
 
 fastapi = FastAPI()
@@ -65,8 +66,10 @@ class SemanticSegmentation:
             "trt_engine_cache_path": cache_path,
             "trt_max_workspace_size": config.get(
                 "trt_max_workspace_size", 8 * 1024 * 1024 * 1024
-            ),  # type: ignore[typeddict-item]
-            "trt_builder_optimization_level": 5,
+            ),
+            "trt_builder_optimization_level": config.get(
+                "trt_builder_optimization_level", 3
+            ),
             "trt_timing_cache_enable": True,
             "trt_profile_min_shapes": min_shape,
             "trt_profile_max_shapes": max_shape,
@@ -76,7 +79,6 @@ class SemanticSegmentation:
         # Configure ONNX Runtime session
         sess_options = ort.SessionOptions()
         sess_options.intra_op_num_threads = config["intra_op_num_threads"]
-        sess_options.inter_op_num_threads = 1
 
         # Enable all graph optimizations (constant folding, node fusion, etc.) for maximum inference performance.
         # ORT_SEQUENTIAL ensures ops run one at a time within a session, which avoids inter-op parallelism
@@ -86,11 +88,12 @@ class SemanticSegmentation:
         )
         sess_options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
 
-        module_path, attr_name = config["model"].pop("_target_").split(":")
+        model_config = dict(config["model"])
+        module_path, attr_name = model_config.pop("_target_").split(":")
         provider = getattr(importlib.import_module(module_path), attr_name)
 
         self.session = ort.InferenceSession(
-            provider(**config["model"]),
+            provider(**model_config),
             providers=[
                 (
                     "TensorrtExecutionProvider",
