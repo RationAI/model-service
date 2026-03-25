@@ -118,7 +118,7 @@ class SemanticSegmentation:
                 {
                     self.input_name: np.zeros(
                         (bs, 3, self.tile_size, self.tile_size),
-                        dtype=np.float32,
+                        dtype=np.uint8,  # stejný dtype jako v predict()
                     )
                 },
             )
