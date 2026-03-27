@@ -114,6 +114,17 @@ class BinaryClassifier:
         self.input_name = self.session.get_inputs()[0].name
         self.output_name = self.session.get_outputs()[0].name
 
+        # Warmup — triggers TRT engine build & caches it to disk
+        for bs in [1, config["max_batch_size"]]:
+            self.session.run(
+                [self.output_name],
+                {
+                    self.input_name: np.zeros(
+                        (bs, 3, self.tile_size, self.tile_size),
+                        dtype=np.uint8,
+                    )
+                },
+            )
         # Configure batching
         self.predict.set_max_batch_size(config["max_batch_size"])  # type: ignore[attr-defined]
         self.predict.set_batch_wait_timeout_s(config["batch_wait_timeout_s"])  # type: ignore[attr-defined]
