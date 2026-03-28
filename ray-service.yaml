@@ -108,7 +108,11 @@ spec:
               runtime_env:
                 env_vars:
                    HF_HOME: "/mnt/huggingface_cache"
-                   HF_HUB_OFFLINE: "1"
+                   HF_TOKEN: 
+                     valueFrom:
+                       secretKeyRef:
+                         name: huggingface-secret
+                         key: token
             user_config:
               tile_size: 224
               max_batch_size: 256
@@ -141,15 +145,15 @@ spec:
               type: RuntimeDefault
           containers:
             - name: ray-head
-              image: cerit.io/rationai/model-service:2.53.0
+              image: rayproject/ray:2.53.0-py312
               imagePullPolicy: Always
               resources:
                 limits:
                   cpu: 0
-                  memory: 8Gi
+                  memory: 4Gi
                 requests:
                   cpu: 0
-                  memory: 8Gi
+                  memory: 4Gi
               env:
                 - name: HTTPS_PROXY
                   value: http://proxy.ics.muni.cz:3128
