@@ -12,14 +12,14 @@ spec:
           working_dir: https://github.com/RationAI/model-service/archive/refs/heads/main.zip
         deployments:
           - name: BinaryClassifier
-            max_ongoing_requests: 38
-            max_queued_requests: 512
+            max_ongoing_requests: 128
+            max_queued_requests: 256
             autoscaling_config:
               min_replicas: 0
               max_replicas: 4
-              target_ongoing_requests: 24
+              target_ongoing_requests: 48
             ray_actor_options:
-              num_cpus: 8
+              num_cpus: 4
               num_gpus: 1
               memory: 8589934592 # 8 GiB
               runtime_env:
@@ -27,10 +27,12 @@ spec:
                   MLFLOW_TRACKING_URI: http://mlflow.rationai-mlflow:5000
             user_config:
               tile_size: 512
-              max_batch_size: 64
+              max_batch_size: 128
               batch_wait_timeout_s: 0.05
+              intra_op_num_threads: 4
               trt_max_workspace_size: 8589934592 # 8 GiB
-              trt_cache_path: /mnt/cache/trt_cache
+              trt_cache_path: /mnt/cache/trt_cache/binary-classifier-1
+              trt_builder_optimization_level: 3
               model:
                 _target_: providers.model_provider:mlflow
                 artifact_uri: mlflow-artifacts:/65/aebc892f526047249b972f200bef4381/artifacts/checkpoints/epoch=0-step=6972/prostate_model_norm.onnx
@@ -39,15 +41,15 @@ spec:
         import_path: models.semantic_segmentation:app
         route_prefix: /episeg-1
         runtime_env:
-          working_dir: https://gitlab.ics.muni.cz/rationai/infrastructure/model-service/-/archive/master/model-service-master.zip
+          working_dir: https://github.com/RationAI/model-service/archive/refs/heads/main.zip
         deployments:
           - name: SemanticSegmentation
-            max_ongoing_requests: 16
-            max_queued_requests: 32
+            max_ongoing_requests: 32
+            max_queued_requests: 64
             autoscaling_config:
               min_replicas: 0
               max_replicas: 2
-              target_ongoing_requests: 8
+              target_ongoing_requests: 16
             ray_actor_options:
               num_cpus: 4
               memory: 12884901888 # 12 GiB
@@ -60,8 +62,10 @@ spec:
               mpp: 0.468
               max_batch_size: 8
               batch_wait_timeout_s: 0.1
+              intra_op_num_threads: 4
               trt_max_workspace_size: 8589934592 # 8 GiB
-              trt_cache_path: /mnt/cache/trt_cache
+              trt_cache_path: /mnt/cache/trt_cache/episeg-1
+              trt_builder_optimization_level: 3
               model:
                 _target_: providers.model_provider:mlflow
                 artifact_uri: mlflow-artifacts:/10/39f821ed5b964c71a603cc6db196f9fd/artifacts/checkpoints/epoch=19-step=32020/model.onnx/model.onnx
@@ -71,15 +75,15 @@ spec:
         import_path: builders.heatmap_builder:app
         route_prefix: /heatmap-builder
         runtime_env:
-          working_dir: https://gitlab.ics.muni.cz/rationai/infrastructure/model-service/-/archive/master/model-service-master.zip
+          working_dir: https://github.com/RationAI/model-service/archive/refs/heads/main.zip
         deployments:
           - name: HeatmapBuilder
-            max_ongoing_requests: 16
-            max_queued_requests: 64
+            max_ongoing_requests: 24
+            max_queued_requests: 48
             autoscaling_config:
               min_replicas: 0
               max_replicas: 4
-              target_ongoing_requests: 2
+              target_ongoing_requests: 8
             ray_actor_options:
               num_cpus: 8
               memory: 12884901888 # 12 GiB
