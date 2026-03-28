@@ -17,6 +17,7 @@ class Config(TypedDict):
     batch_wait_timeout_s: float
     intra_op_num_threads: int
     trt_cache_path: str
+    trt_max_workspace_size: int
     trt_builder_optimization_level: int
 
 
