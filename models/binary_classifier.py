@@ -60,7 +60,7 @@ class BinaryClassifier:
         # - trt_engine_cache_enable: Cache TensorRT engines to disk to avoid rebuilding on restart (default: False rebuilds every time)
         # - trt_engine_cache_path: Directory to store cached engines
         # - trt_timing_cache_enable: Cache kernel timing info to speed up subsequent engine builds (default: False is slower)
-        # - trt_builder_optimization_level: Set to 5 for maximum optimization (default: 3, which might miss optimal kernels)
+        # - trt_builder_optimization_level: Based on config, set to 3 for good optimization without excessive build times (default: 1, which is faster to build but less optimized) (level are 1-5)
         # - trt_max_workspace_size: Memory available for TensorRT to find optimal kernels (default: 1GB)
         #   Default 1GB is insufficient for high-resolution processing, restricting valid kernels.
         #   We default to 8GB as a reasonable balance, but can be overridden via config.
@@ -73,7 +73,7 @@ class BinaryClassifier:
                 "trt_max_workspace_size", 8 * 1024 * 1024 * 1024
             ),
             "trt_builder_optimization_level": config.get(
-                "trt_builder_optimization_level", 3
+                "trt_builder_optimization_level", 1
             ),
             "trt_timing_cache_enable": True,
             "trt_profile_min_shapes": min_shape,
@@ -114,18 +114,6 @@ class BinaryClassifier:
         self.input_name = self.session.get_inputs()[0].name
         self.output_name = self.session.get_outputs()[0].name
 
-        # Warmup — triggers TRT engine build & caches it to disk
-        for bs in [1, config["max_batch_size"]]:
-            self.session.run(
-                [self.output_name],
-                {
-                    self.input_name: np.zeros(
-                        (bs, 3, self.tile_size, self.tile_size),
-                        dtype=np.uint8,
-                    )
-                },
-            )
-        # Configure batching
         self.predict.set_max_batch_size(config["max_batch_size"])  # type: ignore[attr-defined]
         self.predict.set_batch_wait_timeout_s(config["batch_wait_timeout_s"])  # type: ignore[attr-defined]
 
