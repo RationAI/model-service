@@ -54,8 +54,6 @@ RUN sudo sh -c 'echo "/usr/local/lib" > /etc/ld.so.conf.d/custom-libs.conf' && \
     sudo ldconfig
 
 RUN pip install --no-cache-dir \
-    --extra-index-url https://pypi.nvidia.com \
-    --extra-index-url https://download.pytorch.org/whl/cu121 \
     onnxruntime-gpu tensorrt-cu12 lz4 ratiopath "mlflow<3.0" torch torchvision \
     "timm>=1.0.0" \
     "huggingface-hub>=0.23.0"
