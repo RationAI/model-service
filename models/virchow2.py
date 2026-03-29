@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from dataclasses import dataclass
 from typing import Any, TypedDict, cast
 
 import lz4.frame
@@ -20,6 +21,13 @@ class Config(TypedDict):
 
 fastapi = FastAPI()
 logger = logging.getLogger("ray.serve")
+
+
+@dataclass
+class PredictInput:
+    array: NDArray[np.float32]
+    dtype: np.dtype
+    pool_tokens: bool
 
 
 @serve.deployment(num_replicas="auto")
@@ -50,6 +58,10 @@ class Virchow2:
         repo_id = model_config["repo_id"]
 
         logger.info(f"Loading Virchow2 model from {repo_id}...")
+
+        # The provider is required to register the custom Virchow2 architecture
+        # and layers (like SwiGLUPacked) into the timm registry.
+        # Without this, timm.create_model would fail with an 'Unknown model' error.
         provider(**model_config)
 
         self.model = timm.create_model(
@@ -69,30 +81,37 @@ class Virchow2:
         self.predict.set_batch_wait_timeout_s(config["batch_wait_timeout_s"])  # type: ignore[attr-defined]
 
     @serve.batch
-    async def predict(
-        self, inputs: list[torch.Tensor | NDArray[np.float16] | NDArray[np.float32]]
-    ) -> list[NDArray[np.float32]]:
-        tensors = torch.stack(
-            [
-                item if isinstance(item, torch.Tensor) else torch.from_numpy(item)
-                for item in inputs
-            ]
-        ).to(self.device)
-        model = cast("torch.nn.Module", self.model)
-
+    async def predict(self, inputs: list[PredictInput]) -> list[NDArray[Any]]:
+        tensors = torch.stack([torch.from_numpy(inp.array) for inp in inputs]).to(
+            self.device
+        )
         device_type = self.device.type
+        # PyTorch autocast does not support float16 on CPU (throws RuntimeError).
+        # bfloat16 is the only supported low-precision option for CPU inference.
         autocast_dtype = torch.float16 if device_type == "cuda" else torch.bfloat16
 
         with (
             torch.inference_mode(),
             torch.autocast(device_type=device_type, dtype=autocast_dtype),
         ):
-            output = model(tensors)
-            class_token = output[:, 0]
-            patch_tokens = output[:, 5:]
-            embedding = torch.cat([class_token, patch_tokens.mean(dim=1)], dim=-1)
+            output = self.model(tensors)
 
-        return list(embedding.float().cpu().numpy())
+        results = []
+        for i, inp in enumerate(inputs):
+            single_output = output[i]
+
+            if inp.pool_tokens:
+                class_token = single_output[0]
+                patch_tokens = single_output[5:]
+                embedding = torch.cat([class_token, patch_tokens.mean(dim=0)], dim=-1)
+            else:
+                embedding = torch.cat([single_output[0:1], single_output[5:]], dim=0)
+
+            results.append(
+                embedding.float().cpu().numpy().astype(inp.dtype, copy=False)
+            )
+
+        return results
 
     @fastapi.post("/")
     async def root(self, request: Request) -> Response:
@@ -101,17 +120,24 @@ class Virchow2:
             self.tile_size, self.tile_size, 3
         )
 
-        requested_dtype = request.headers.get("x-output-dtype", "float32").lower()
+        output_dtype = np.dtype(
+            request.headers.get("x-output-dtype", "float32").lower()
+        )
+        pool_tokens = request.headers.get("x-pool-tokens", "true").lower() == "true"
 
-        output_dtype = np.dtype(requested_dtype)
         tensor = self.transforms(Image.fromarray(image))
-        result: NDArray[np.float32] = await self.predict(tensor)
+        array = tensor.numpy()
+        result = await cast(
+            "Any",
+            self.predict(
+                PredictInput(array=array, dtype=output_dtype, pool_tokens=pool_tokens)
+            ),
+        )
+
         output_shape = ",".join(str(d) for d in result.shape)
 
         return Response(
-            content=lz4.frame.compress(
-                result.astype(output_dtype, copy=False).tobytes()
-            ),
+            content=lz4.frame.compress(result.tobytes()),
             media_type="application/octet-stream",
             headers={
                 "x-output-shape": output_shape,
