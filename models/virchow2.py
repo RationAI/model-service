@@ -27,11 +27,12 @@ logger = logging.getLogger("ray.serve")
 class Virchow2:
     """Virchow2 foundation model for pathology."""
 
+    model: torch.nn.Module
+    transforms: Any
+    tile_size: int
+
     def __init__(self) -> None:
-        self.model: torch.nn.Module | None = None
-        self.transforms: Any = None
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.tile_size: int = 0
 
     def reconfigure(self, config: Config) -> None:
         import importlib
