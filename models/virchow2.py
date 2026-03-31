@@ -108,7 +108,7 @@ class Virchow2:
                 embedding = torch.cat([single_output[0:1], single_output[5:]], dim=0)
 
             results.append(
-                embedding.float().cpu().numpy().astype(inp.dtype, copy=False)
+                embedding.cpu().numpy().astype(inp.dtype, copy=False)
             )
 
         return results
