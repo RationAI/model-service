@@ -1,5 +1,4 @@
 import asyncio
-import logging
 from dataclasses import dataclass
 from typing import Any, TypedDict, cast
 
@@ -20,7 +19,6 @@ class Config(TypedDict):
 
 
 fastapi = FastAPI()
-logger = logging.getLogger("ray.serve")
 
 
 @dataclass
@@ -43,7 +41,6 @@ class Virchow2:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     def reconfigure(self, config: Config) -> None:
-        import importlib
 
         import timm
         from timm.data.config import resolve_data_config
@@ -53,16 +50,7 @@ class Virchow2:
         self.tile_size = config["tile_size"]
 
         model_config = dict(config["model"])
-        module_path, attr_name = model_config.pop("_target_").split(":")
-        provider = getattr(importlib.import_module(module_path), attr_name)
         repo_id = model_config["repo_id"]
-
-        logger.info(f"Loading Virchow2 model from {repo_id}...")
-
-        # The provider is required to register the custom Virchow2 architecture
-        # and layers (like SwiGLUPacked) into the timm registry.
-        # Without this, timm.create_model would fail with an 'Unknown model' error.
-        provider(**model_config)
 
         self.model = timm.create_model(
             f"hf-hub:{repo_id}",
