@@ -25,7 +25,6 @@ fastapi = FastAPI()
 class PredictInput:
     array: NDArray[np.float32]
     dtype: np.dtype
-    pool_tokens: bool
 
 
 @serve.deployment(num_replicas="auto")
@@ -84,22 +83,12 @@ class Virchow2:
         ):
             output = self.model(tensors)
 
-        results = []
-        for i, inp in enumerate(inputs):
-            single_output = output[i]
+        outputs = output.cpu().numpy()
 
-            if inp.pool_tokens:
-                class_token = single_output[0]
-                patch_tokens = single_output[5:]
-                embedding = torch.cat([class_token, patch_tokens.mean(dim=0)], dim=-1)
-            else:
-                embedding = torch.cat([single_output[0:1], single_output[5:]], dim=0)
-
-            results.append(
-                embedding.cpu().numpy().astype(inp.dtype, copy=False)
-            )
-
-        return results
+        return [
+            row.astype(inp.dtype, copy=False)
+            for row, inp in zip(outputs, inputs, strict=False)
+        ]
 
     @fastapi.post("/")
     async def root(self, request: Request) -> Response:
@@ -113,15 +102,17 @@ class Virchow2:
         )
         pool_tokens = request.headers.get("x-pool-tokens", "true").lower() == "true"
 
-        tensor = self.transforms(Image.fromarray(image))
-        array = tensor.numpy()
-        result = await cast(
-            "Any",
-            self.predict(
-                PredictInput(array=array, dtype=output_dtype, pool_tokens=pool_tokens)
-            ),
+        array = self.transforms(Image.fromarray(image)).numpy()
+        raw_output = await cast(
+            "Any", self.predict(PredictInput(array=array, dtype=output_dtype))
         )
 
+        if pool_tokens:
+            class_token = raw_output[0]
+            patch_tokens = raw_output[5:]
+            result = np.concatenate([class_token, patch_tokens.mean(axis=0)], axis=-1)
+        else:
+            result = np.concatenate([raw_output[0:1], raw_output[5:]], axis=0)
         output_shape = ",".join(str(d) for d in result.shape)
 
         return Response(
