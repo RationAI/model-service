@@ -110,6 +110,11 @@ class SemanticSegmentation:
             ],
             session_options=sess_options,
         )
+        print(
+            "[SemanticSegmentation] ONNX Runtime providers:",
+            self.session.get_providers(),
+            flush=True,
+        )
 
         self.input_name = self.session.get_inputs()[0].name
         self.output_name = self.session.get_outputs()[0].name
