@@ -1,4 +1,6 @@
+import logging
 import os
+import time
 from typing import Any, TypedDict
 
 import numpy as np
@@ -20,6 +22,7 @@ class Config(TypedDict):
 
 
 fastapi = FastAPI()
+logger = logging.getLogger("model-service.semantic-segmentation")
 
 
 @serve.deployment(num_replicas="auto")
@@ -42,11 +45,20 @@ class SemanticSegmentation:
 
         import onnxruntime as ort
 
+        logger.info("[SemanticSegmentation] reconfigure start")
+
         self.tile_size = config["tile_size"]
         self.mpp = config["mpp"]
 
         cache_path = config["trt_cache_path"]
         os.makedirs(cache_path, exist_ok=True)
+        logger.info(
+            "[SemanticSegmentation] config tile_size=%s max_batch_size=%s mpp=%s cache_path=%s",
+            self.tile_size,
+            config["max_batch_size"],
+            self.mpp,
+            cache_path,
+        )
 
         min_shape = f"input:1x3x{self.tile_size}x{self.tile_size}"
         opt_shape = (
@@ -97,6 +109,14 @@ class SemanticSegmentation:
         model_config = dict(config["model"])
         module_path, attr_name = model_config.pop("_target_").split(":")
         provider = getattr(importlib.import_module(module_path), attr_name)
+        logger.info(
+            "[SemanticSegmentation] loading model using provider=%s:%s",
+            module_path,
+            attr_name,
+        )
+
+        session_start = time.perf_counter()
+        logger.info("[SemanticSegmentation] creating ONNX Runtime session")
 
         self.session = ort.InferenceSession(
             provider(**model_config),
@@ -110,14 +130,22 @@ class SemanticSegmentation:
             ],
             session_options=sess_options,
         )
-        print(
-            "[SemanticSegmentation] ONNX Runtime providers:",
+        logger.info(
+            "[SemanticSegmentation] ONNX Runtime session ready in %.2fs",
+            time.perf_counter() - session_start,
+        )
+        logger.info(
+            "[SemanticSegmentation] ONNX Runtime providers: %s",
             self.session.get_providers(),
-            flush=True,
         )
 
         self.input_name = self.session.get_inputs()[0].name
         self.output_name = self.session.get_outputs()[0].name
+        logger.info(
+            "[SemanticSegmentation] session I/O input=%s output=%s",
+            self.input_name,
+            self.output_name,
+        )
 
         warmup_batch = np.zeros(
             (
@@ -128,14 +156,27 @@ class SemanticSegmentation:
             ),
             dtype=np.uint8,
         )
+        logger.info(
+            "[SemanticSegmentation] warmup start batch=%s tensor_shape=%s",
+            config["max_batch_size"],
+            tuple(warmup_batch.shape),
+        )
+        warmup_start = time.perf_counter()
         self.session.run([self.output_name], {self.input_name: warmup_batch})
-        print(
-            f"[SemanticSegmentation] TensorRT warmup finished for batch={config['max_batch_size']}",
-            flush=True,
+        logger.info(
+            "[SemanticSegmentation] TensorRT warmup finished for batch=%s in %.2fs",
+            config["max_batch_size"],
+            time.perf_counter() - warmup_start,
         )
 
         self.predict.set_max_batch_size(config["max_batch_size"])  # type: ignore[attr-defined]
         self.predict.set_batch_wait_timeout_s(config["batch_wait_timeout_s"])  # type: ignore[attr-defined]
+        logger.info(
+            "[SemanticSegmentation] batch config set max_batch_size=%s batch_wait_timeout_s=%s",
+            config["max_batch_size"],
+            config["batch_wait_timeout_s"],
+        )
+        logger.info("[SemanticSegmentation] reconfigure finished")
 
     def get_config(self) -> dict[str, Any]:
         """Return the current configuration (tile size and mpp)."""
