@@ -95,30 +95,24 @@ spec:
           working_dir: https://github.com/RationAI/model-service/archive/refs/heads/main.zip
         deployments:
           - name: Virchow2
-            max_ongoing_requests: 200
-            max_queued_requests: 2048
+            max_ongoing_requests: 512
+            max_queued_requests: 1024
             autoscaling_config:
               min_replicas: 0
               max_replicas: 1
               target_ongoing_requests: 128
             ray_actor_options:
-              num_cpus: 8
+              num_cpus: 4
               num_gpus: 1
               memory: 8589934592 # 8 GiB
               runtime_env:
                 env_vars:
                    HF_HOME: "/mnt/huggingface_cache"
-                   HF_TOKEN: 
-                     valueFrom:
-                       secretKeyRef:
-                         name: huggingface-secret
-                         key: token
             user_config:
               tile_size: 224
               max_batch_size: 256
               batch_wait_timeout_s: 0.1
               model:
-                _target_: providers.model_provider:huggingface
                 repo_id: paige-ai/Virchow2
 
   rayClusterConfig:
@@ -271,6 +265,11 @@ spec:
                 env:
                   - name: HTTPS_PROXY
                     value: http://proxy.ics.muni.cz:3128
+                  - name: HF_TOKEN
+                    valueFrom:
+                      secretKeyRef:
+                        name: huggingface-secret
+                        key: token
                 securityContext:
                   allowPrivilegeEscalation: false
                   capabilities:
