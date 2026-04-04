@@ -119,6 +119,21 @@ class SemanticSegmentation:
         self.input_name = self.session.get_inputs()[0].name
         self.output_name = self.session.get_outputs()[0].name
 
+        warmup_batch = np.zeros(
+            (
+                config["max_batch_size"],
+                3,
+                self.tile_size,
+                self.tile_size,
+            ),
+            dtype=np.uint8,
+        )
+        self.session.run([self.output_name], {self.input_name: warmup_batch})
+        print(
+            f"[SemanticSegmentation] TensorRT warmup finished for batch={config['max_batch_size']}",
+            flush=True,
+        )
+
         self.predict.set_max_batch_size(config["max_batch_size"])  # type: ignore[attr-defined]
         self.predict.set_batch_wait_timeout_s(config["batch_wait_timeout_s"])  # type: ignore[attr-defined]
 
