@@ -23,6 +23,7 @@ class Config(TypedDict):
 
 fastapi = FastAPI()
 logger = logging.getLogger("model-service.semantic-segmentation")
+logger.setLevel(logging.INFO)
 
 
 @serve.deployment(num_replicas="auto")
@@ -97,6 +98,8 @@ class SemanticSegmentation:
         # Configure ONNX Runtime session
         sess_options = ort.SessionOptions()
         sess_options.intra_op_num_threads = config["intra_op_num_threads"]
+        sess_options.log_severity_level = 0
+        sess_options.log_verbosity_level = 1
 
         # Enable all graph optimizations (constant folding, node fusion, etc.) for maximum inference performance.
         # ORT_SEQUENTIAL ensures ops run one at a time within a session, which avoids inter-op parallelism
@@ -130,6 +133,11 @@ class SemanticSegmentation:
             ],
             session_options=sess_options,
         )
+        logger.warning(
+            "[SemanticSegmentation] diagnostics ORT log_severity=%s log_verbosity=%s",
+            sess_options.log_severity_level,
+            sess_options.log_verbosity_level,
+        )
         logger.info(
             "[SemanticSegmentation] ONNX Runtime session ready in %.2fs",
             time.perf_counter() - session_start,
@@ -137,6 +145,10 @@ class SemanticSegmentation:
         logger.info(
             "[SemanticSegmentation] ONNX Runtime providers: %s",
             self.session.get_providers(),
+        )
+        logger.warning(
+            "[SemanticSegmentation] ONNX Runtime provider options: %s",
+            self.session.get_provider_options(),
         )
 
         self.input_name = self.session.get_inputs()[0].name
