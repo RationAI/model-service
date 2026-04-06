@@ -30,11 +30,9 @@ class SemanticSegmentation:
     tile_size: int
 
     def __init__(self) -> None:
-        """Initialize the SemanticSegmentation deployment and set up LZ4 decompression."""
         import lz4.frame
 
         self.lz4 = lz4.frame
-        self.tile_size = 1024  # default, will be overridden by reconfigure
 
     def reconfigure(self, config: Config) -> None:
         """Load the ONNX model and configure inference settings, including TensorRT options."""
@@ -70,9 +68,7 @@ class SemanticSegmentation:
             "trt_fp16_enable": True,
             "trt_engine_cache_enable": True,
             "trt_engine_cache_path": cache_path,
-            "trt_max_workspace_size": config.get(
-                "trt_max_workspace_size", 8 * 1024 * 1024 * 1024
-            ),
+            "trt_max_workspace_size": config.get("trt_max_workspace_size", 8 * 1024**3),
             "trt_builder_optimization_level": config.get(
                 "trt_builder_optimization_level", 1
             ),
@@ -85,6 +81,7 @@ class SemanticSegmentation:
         # Configure ONNX Runtime session
         sess_options = ort.SessionOptions()
         sess_options.intra_op_num_threads = config["intra_op_num_threads"]
+        sess_options.inter_op_num_threads = 1
 
         # Enable all graph optimizations (constant folding, node fusion, etc.) for maximum inference performance.
         # ORT_SEQUENTIAL ensures ops run one at a time within a session, which avoids inter-op parallelism
@@ -125,14 +122,12 @@ class SemanticSegmentation:
     async def predict(
         self, images: list[NDArray[np.uint8]]
     ) -> list[NDArray[np.float16]]:
-        """Run inference on a batch of images."""
         batch = np.stack(images, axis=0, dtype=np.uint8)
         outputs = self.session.run([self.output_name], {self.input_name: batch})
         return list(outputs[0].astype(np.float16))
 
     @fastapi.post("/")
     async def root(self, request: Request) -> Response:
-        """Handle inference request with LZ4-compressed image."""
         data = self.lz4.decompress(await request.body())
         image = np.frombuffer(data, dtype=np.uint8).reshape(
             self.tile_size, self.tile_size, 3

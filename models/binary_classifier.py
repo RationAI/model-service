@@ -35,7 +35,6 @@ class BinaryClassifier:
         import lz4.frame
 
         self.lz4 = lz4.frame
-        self.tile_size = 512  # default, will be overridden by reconfigure
 
     def reconfigure(self, config: Config) -> None:
         """Load the ONNX model and configure inference settings."""
@@ -70,9 +69,7 @@ class BinaryClassifier:
             "trt_fp16_enable": True,
             "trt_engine_cache_enable": True,
             "trt_engine_cache_path": cache_path,
-            "trt_max_workspace_size": config.get(
-                "trt_max_workspace_size", 8 * 1024 * 1024 * 1024
-            ),
+            "trt_max_workspace_size": config.get("trt_max_workspace_size", 8 * 1024**3),
             "trt_builder_optimization_level": config.get(
                 "trt_builder_optimization_level", 1
             ),
@@ -85,6 +82,7 @@ class BinaryClassifier:
         # Configure ONNX Runtime session
         sess_options = ort.SessionOptions()
         sess_options.intra_op_num_threads = config["intra_op_num_threads"]
+        sess_options.inter_op_num_threads = 1
 
         # Enable all graph optimizations (constant folding, node fusion, etc.) for maximum inference performance.
         # ORT_SEQUENTIAL ensures ops run one at a time within a session, which avoids inter-op parallelism
@@ -120,7 +118,6 @@ class BinaryClassifier:
 
     @serve.batch
     async def predict(self, images: list[NDArray[np.uint8]]) -> list[float]:
-        """Run inference on a batch of images."""
         batch = np.stack(images, axis=0, dtype=np.uint8)
 
         outputs = self.session.run([self.output_name], {self.input_name: batch})
@@ -129,7 +126,6 @@ class BinaryClassifier:
 
     @fastapi.post("/")
     async def root(self, request: Request) -> float:
-        """Handle inference request with LZ4-compressed image."""
         data = await asyncio.to_thread(self.lz4.decompress, await request.body())
 
         image = (
