@@ -1,14 +1,18 @@
+from __future__ import annotations
+
 import asyncio
 from dataclasses import dataclass
-from typing import Any, TypedDict, cast
+from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 import lz4.frame
 import numpy as np
-import torch
 from fastapi import FastAPI, Request, Response
 from numpy.typing import NDArray
-from PIL import Image
 from ray import serve
+
+
+if TYPE_CHECKING:
+    import torch
 
 
 class Config(TypedDict):
@@ -37,17 +41,18 @@ class Virchow2:
     tile_size: int
 
     def __init__(self) -> None:
+        import torch
+
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     def reconfigure(self, config: Config) -> None:
-
         import timm
+        import torch
         from timm.data.config import resolve_data_config
         from timm.data.transforms_factory import create_transform
         from timm.layers.mlp import SwiGLUPacked
 
         self.tile_size = config["tile_size"]
-
         model_config = dict(config["model"])
         repo_id = model_config["repo_id"]
 
@@ -69,6 +74,8 @@ class Virchow2:
 
     @serve.batch
     async def predict(self, inputs: list[PredictInput]) -> list[NDArray[Any]]:
+        import torch
+
         tensors = torch.stack([torch.from_numpy(inp.array) for inp in inputs]).to(
             self.device
         )
@@ -92,6 +99,8 @@ class Virchow2:
 
     @fastapi.post("/")
     async def root(self, request: Request) -> Response:
+        from PIL import Image
+
         data = await asyncio.to_thread(lz4.frame.decompress, await request.body())
         image = np.frombuffer(data, dtype=np.uint8).reshape(
             self.tile_size, self.tile_size, 3
