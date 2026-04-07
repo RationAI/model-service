@@ -16,6 +16,7 @@ class Config(TypedDict):
     max_batch_size: int
     batch_wait_timeout_s: float
     trt_cache_path: str
+    intra_op_num_threads: int
 
 
 fastapi = FastAPI()
@@ -78,6 +79,7 @@ class BinaryClassifier:
 
         # Configure ONNX Runtime session
         sess_options = ort.SessionOptions()
+        sess_options.intra_op_num_threads = config["intra_op_num_threads"]
         sess_options.inter_op_num_threads = 1
 
         # Enable all graph optimizations (constant folding, node fusion, etc.) for maximum inference performance.

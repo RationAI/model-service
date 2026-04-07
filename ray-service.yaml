@@ -29,6 +29,7 @@ spec:
               tile_size: 512
               max_batch_size: 16
               batch_wait_timeout_s: 0.01
+              intra_op_num_threads: 4
               trt_max_workspace_size: 8589934592 # 8 GiB
               trt_cache_path: /mnt/cache/trt_cache
               model:
@@ -60,6 +61,7 @@ spec:
               mpp: 0.468
               max_batch_size: 8
               batch_wait_timeout_s: 0.1
+              intra_op_num_threads: 4
               trt_max_workspace_size: 8589934592 # 8 GiB
               trt_cache_path: /mnt/cache/trt_cache
               model:
