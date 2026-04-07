@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, TypedDict, cast
+from typing import TYPE_CHECKING, Any, TypedDict
 
 import lz4.frame
 import numpy as np
 from fastapi import FastAPI, Request, Response
-from numpy.typing import NDArray
 from ray import serve
 
 
@@ -23,12 +21,6 @@ class Config(TypedDict):
 
 
 fastapi = FastAPI()
-
-
-@dataclass
-class PredictInput:
-    array: NDArray[np.float32]
-    dtype: np.dtype
 
 
 @serve.deployment(num_replicas="auto")
@@ -73,13 +65,12 @@ class Virchow2:
         self.predict.set_batch_wait_timeout_s(config["batch_wait_timeout_s"])  # type: ignore[attr-defined]
 
     @serve.batch
-    async def predict(self, inputs: list[PredictInput]) -> list[NDArray[Any]]:
+    async def predict(self, inputs: list[torch.Tensor]) -> list[torch.Tensor]:
         import torch
 
-        tensors = torch.stack([torch.from_numpy(inp.array) for inp in inputs]).to(
-            self.device
-        )
+        tensors = torch.stack(inputs).to(self.device)
         device_type = self.device.type
+
         # PyTorch autocast does not support float16 on CPU (throws RuntimeError).
         # bfloat16 is the only supported low-precision option for CPU inference.
         autocast_dtype = torch.float16 if device_type == "cuda" else torch.bfloat16
@@ -90,15 +81,11 @@ class Virchow2:
         ):
             output = self.model(tensors)
 
-        outputs = output.cpu().numpy()
-
-        return [
-            row.astype(inp.dtype, copy=False)
-            for row, inp in zip(outputs, inputs, strict=False)
-        ]
+        return list(output)
 
     @fastapi.post("/")
     async def root(self, request: Request) -> Response:
+        import torch
         from PIL import Image
 
         data = await asyncio.to_thread(lz4.frame.decompress, await request.body())
@@ -111,17 +98,19 @@ class Virchow2:
         )
         pool_tokens = request.headers.get("x-pool-tokens", "true").lower() == "true"
 
-        array = self.transforms(Image.fromarray(image)).numpy()
-        raw_output = await cast(
-            "Any", self.predict(PredictInput(array=array, dtype=output_dtype))
-        )
+        tensor = self.transforms(Image.fromarray(image))
+
+        raw_output: torch.Tensor = await self.predict(tensor)
 
         if pool_tokens:
             class_token = raw_output[0]
             patch_tokens = raw_output[5:]
-            result = np.concatenate([class_token, patch_tokens.mean(axis=0)], axis=-1)
+            result_tensor = torch.cat([class_token, patch_tokens.mean(dim=0)], dim=-1)
         else:
-            result = np.concatenate([raw_output[0:1], raw_output[5:]], axis=0)
+            result_tensor = torch.cat([raw_output[0:1], raw_output[5:]], dim=0)
+
+        result = result_tensor.cpu().numpy().astype(output_dtype, copy=False)
+
         output_shape = ",".join(str(d) for d in result.shape)
 
         return Response(
