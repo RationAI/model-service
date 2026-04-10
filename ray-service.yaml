@@ -97,8 +97,8 @@ spec:
           working_dir: https://github.com/RationAI/model-service/archive/refs/heads/main.zip
         deployments:
           - name: Virchow2
-            max_ongoing_requests: 512
-            max_queued_requests: 1024
+            max_ongoing_requests: 1024
+            max_queued_requests: 2048
             autoscaling_config:
               min_replicas: 0
               max_replicas: 1
@@ -112,7 +112,7 @@ spec:
                    HF_HOME: "/mnt/huggingface_cache"
             user_config:
               tile_size: 224
-              max_batch_size: 256
+              max_batch_size: 512
               batch_wait_timeout_s: 0.1
               model:
                 repo_id: paige-ai/Virchow2
