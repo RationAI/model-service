@@ -66,11 +66,8 @@ class Virchow2:
 
     @serve.batch
     async def predict(self, inputs: list[torch.Tensor]) -> list[torch.Tensor]:
-        import logging
-
         import torch
 
-        logging.info(f"Batch size: {len(inputs)}")
         tensors = torch.stack(inputs).to(self.device)
         device_type = self.device.type
 
