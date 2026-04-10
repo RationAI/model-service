@@ -105,13 +105,12 @@ class Virchow2:
         if pool_tokens:
             class_token = raw_output[0]
             patch_tokens = raw_output[5:]
-            result_tensor = torch.cat([class_token, patch_tokens.mean(dim=0)], dim=-1)
+            result_tensor = torch.cat([class_token, patch_tokens.mean(dim=0)], dim=0)
         else:
             result_tensor = torch.cat([raw_output[0:1], raw_output[5:]], dim=0)
 
         result = result_tensor.cpu().numpy().astype(output_dtype, copy=False)
-
-        output_shape = ",".join(str(d) for d in result.shape)
+        output_shape = str(result.shape)
 
         return Response(
             content=lz4.frame.compress(result.tobytes()),
