@@ -15,6 +15,7 @@ class Config(TypedDict):
     model: dict[str, Any]
     max_batch_size: int
     batch_wait_timeout_s: float
+    trt_cache_path: str
     intra_op_num_threads: int
     trt_cache_path: str
     trt_builder_optimization_level: int
@@ -122,7 +123,10 @@ class BinaryClassifier:
         """Run inference on a batch of images."""
         batch = np.stack(images, axis=0, dtype=np.uint8)
 
-        outputs = self.session.run([self.output_name], {self.input_name: batch})
+        outputs = self.session.run(
+            [self.output_name],
+            {self.input_name: batch},
+        )
 
         return outputs[0].flatten().tolist()  # pyright: ignore[reportAttributeAccessIssue]
 
