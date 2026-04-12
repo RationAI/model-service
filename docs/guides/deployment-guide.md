@@ -1,221 +1,175 @@
 # Deployment Guide
 
-Complete guide for deploying models to production with Model Service.
+Ready to go live? 🚀 Let's take your awesome local model and deploy it to a production cluster!
 
-## Prerequisites
+By the end of this guide, you will have a robust, scalable service running in Kubernetes. Grab a coffee, and let's go!
 
-Before deploying to production, ensure:
+## Are we ready for liftoff?
 
-- [x] KubeRay operator installed
-- [x] Namespace created (`rationai-notebooks-ns`)
-- [x] Model tested locally
-- [x] RayService YAML configured
-- [x] MLflow accessible (if using MLflow)
+Before we push the big red button, let's do a quick pre-flight check:
 
-## Deployment Workflow
+- [x] Is the KubeRay operator installed on your cluster?
+- [x] Do you have your target namespace ready? (e.g. `rationai-notebooks-ns`)
+- [x] Have you tested your Python code locally?
+- [x] (Optional) Can your cluster reach MLflow to download model weights?
 
-### 1. Prepare Model Code
+Everything checked? Great! Let's deploy.
 
-Ensure your model is in the `models/` directory and properly structured:
+---
+
+## Step 1: Prep your Python code
+
+First, let's make sure your Python code is structured correctly for Model Service. Create a file in `models/` (let's call it `my_model.py`):
 
 ```python
 # models/my_model.py
+from typing import TypedDict
+from fastapi import FastAPI, Request
 from ray import serve
-from starlette.requests import Request
 
-@serve.deployment(ray_actor_options={"num_cpus": 2})
+# A clean way to type our dynamic config!
+class Config(TypedDict):
+    threshold: float
+
+app_ingress = FastAPI()
+
+@serve.deployment(num_replicas="auto")
+@serve.ingress(app_ingress)
 class MyModel:
     def __init__(self):
-        # Model initialization
-        self.model = self.load_model()
+        # We load the weights ONCE when the replica starts
+        self.model = self.load_model_once()
+        self.threshold = 0.5 # Default
 
-    def load_model(self):
-        # Load model logic
-        pass
+    def load_model_once(self):
+        print("Pretend I'm loading an expensive model right now...")
+        return object()
 
-    async def __call__(self, request: Request):
-        # Inference logic
+    def reconfigure(self, config: Config):
+        # This gets called dynamically if we update the YAML!
+        self.threshold = config["threshold"]
+        print(f"Updated threshold to {self.threshold}")
+
+    @app_ingress.post("/")
+    async def predict(self, request: Request):
         data = await request.json()
-        result = self.model.predict(data["input"])  # replace with your own inference call
-        return {"prediction": result}
+        score = float(data["input"])
+        return {"score": score, "label": score >= self.threshold}
 
+# This is what Ray looks for!
 app = MyModel.bind()
 ```
 
-### 2. Create RayService Configuration
+Look how elegant that is! We load our model weights once in the `__init__`, we accept dynamic updates via `reconfigure()`, and we handle HTTP traffic with standard FastAPI.
 
-Create or modify `ray-service.yaml`:
+---
+
+## Step 2: Write your RayService YAML
+
+Now we need to tell Kubernetes about our cool new app. Open `ray-service.yaml` and add an entry under `applications`:
 
 ```yaml
-apiVersion: ray.io/v1
-kind: RayService
-metadata:
-  name: rayservice-my-model
-  namespace: rationai-notebooks-ns
 spec:
   serveConfigV2: |
     applications:
       - name: my-model
-        import_path: models.my_model:app
+        # Point to the code we just wrote!
+        import_path: models.my_model:app 
         route_prefix: /my-model
+        
         runtime_env:
-          working_dir: https://github.com/RationAI/model-service/archive/refs/heads/main.zip
-          pip:
-            - numpy
-            - pandas
-          env_vars:
-            MODEL_VERSION: "1.0.0"
+          # Where to download your code from
+          working_dir: https://gitlab.ics.muni.cz/rationai/infrastructure/model-service/-/archive/master/model-service-master.zip
+        
         deployments:
           - name: MyModel
+            # Don't let replicas get overwhelmed!
+            max_ongoing_requests: 32
+            max_queued_requests: 64
+            
             autoscaling_config:
-              min_replicas: 1
-              max_replicas: 5
-              target_ongoing_requests: 32
+              min_replicas: 0 # Spin down to save money when idle!
+              max_replicas: 4
+              target_ongoing_requests: 16
+              
             ray_actor_options:
-              num_cpus: 4
-              memory: 4294967296  # 4 GiB
+              num_cpus: 2 # Give each replica 2 CPUs
               runtime_env:
                 pip:
-                  - numpy
-                  - pandas
-
-  rayClusterConfig:
-    rayVersion: 2.52.1
-    enableInTreeAutoscaling: true
-    autoscalerOptions:
-      idleTimeoutSeconds: 300
-
-    headGroupSpec:
-      rayStartParams:
-        num-cpus: "0"
-        dashboard-host: "0.0.0.0"
-      template:
-        spec:
-          containers:
-            - name: ray-head
-              image: rayproject/ray:2.52.1-py312
-              resources:
-                limits:
-                  cpu: 2
-                  memory: 4Gi
-
-    workerGroupSpecs:
-      - groupName: cpu-workers
-        replicas: 1
-        minReplicas: 1
-        maxReplicas: 10
-        template:
-          spec:
-            containers:
-              - name: ray-worker
-                image: rayproject/ray:2.52.1-py312
-                resources:
-                  limits:
-                    cpu: 8
-                    memory: 16Gi
+                  - fastapi
 ```
 
-### 3. Deploy to Kubernetes
+---
 
-Apply the configuration:
+## Step 3: Deploy to Kubernetes! 🚢
+
+In your terminal, apply the configuration to your specific namespace:
 
 ```bash
-kubectl apply -f ray-service.yaml -n [namespace]
+kubectl apply -f ray-service.yaml -n your-favorite-namespace
 ```
 
-### 4. Monitor Deployment
+---
 
-Watch the deployment progress:
+## Step 4: Watch the magic happen
+
+Ray is now waking up computers, downloading your zipped code, pip-installing FastAPI, and spinning up your replicas. Let's watch the progress:
 
 ```bash
-# Watch RayService status
-kubectl get rayservice rayservice-my-model -n [namespace] -w
+# Watch the high-level status (press Ctrl+C to exit)
+kubectl get rayservice rayservice-model -n your-favorite-namespace -w
 
-# Check pods
-kubectl get pods -n [namespace] -l ray.io/cluster=rayservice-my-model
-
-# View head node logs
-kubectl logs -n [namespace] -l ray.io/node-type=head -f
-
-# View worker logs
-kubectl logs -n [namespace] -l ray.io/node-type=worker -f
+# Check on the workers!
+kubectl get pods -n your-favorite-namespace -l ray.io/cluster=rayservice-model
 ```
 
-Wait for status to show `Running` and application status to show `RUNNING`.
-
-### 5. Verify Deployment
-
-Check service endpoints:
+If you ever get stuck, looking at the logs is the easiest way to figure out what happened:
 
 ```bash
-# Get service details
-kubectl get svc -n [namespace]
-
-# Port forward to test
-kubectl port-forward -n [namespace] \
-  svc/rayservice-my-model-serve-svc 8000:8000
+# What is the Ray head node doing?
+kubectl logs -n your-favorite-namespace -l ray.io/node-type=head -f
 ```
 
-The example model in this repository (`models/binary_classifier.py`) uses FastAPI ingress and expects a **compressed binary request body** (LZ4), not JSON. The JSON `curl` example below is valid for JSON-based models but does not apply to `BinaryClassifier`.
+---
 
-## Production Considerations
+## Step 5: Test it out!
 
-### Resource Planning (Logical vs. Physical)
+Once the status says `RUNNING`, it's time to talk to your model! Since you're on your local laptop, use port-forwarding to create a tunnel to the cluster:
 
-Ray scheduling relies on **Logical Resources**, while Kubernetes manages **Physical Resources**. Confusion between them is the #1 cause of "Pending" pods.
-
-#### 1. Logical Resources (What Ray sees)
-
-Defined in your code via `ray_actor_options`. These are abstract "slots" used for scheduling.
-
-- `num_cpus: 4`: The actor needs 4 slots to run.
-- `memory: 4294967296` (bytes): Ray logical memory resource used for scheduling/admission control.
-
-Example (Python):
-
-```python
-from ray import serve
-
-@serve.deployment(
-  ray_actor_options={
-    "num_cpus": 4,
-    "memory": 4 * 1024**3,  # bytes (4 GiB)
-  }
-)
-class MyModel:
-  ...
-
-app = MyModel.bind()
+```bash
+kubectl port-forward -n your-favorite-namespace svc/rayservice-model-serve-svc 8000:8000
 ```
 
-#### 2. Physical Resources (What Kubernetes gives)
+Now try hitting it with a request! (Since we used FastAPI, we can just send JSON):
 
-Defined in `ray-service.yaml` under `workerGroupSpecs`. This is the actual container capacity.
-
-Example (Kubernetes YAML):
-
-```yaml
-workerGroupSpecs:
-  - groupName: cpu-workers
-    replicas: 1
-    template:
-      spec:
-        containers:
-          - name: ray-worker
-            resources:
-              requests:
-                cpu: 8
-                memory: 16Gi
-              limits:
-                cpu: 12
-                memory: 20Gi
+```bash
+curl -X POST http://localhost:8000/my-model/ -H "Content-Type: application/json" -d '{"input": 0.8}'
 ```
 
-#### 3. The "Overhead" Gap
+🎉 Boom! Production response!
 
-Ray system processes (Raylet, Dashboard Agent, Plasma Store) consume physical CPU and Memory that is **not** accounted for in logical slots.
+---
 
-**Formula for Worker Pod Sizing:**
+## 🤯 The Biggest Production Trap: Pods vs Replicas
+
+Before you deploy real models, you _must_ know the difference between Pods and Replicas. Getting this wrong is the #1 reason why models get stuck in "Pending".
+
+### 1. Logical Resources (Replicas)
+
+When you write `num_cpus: 4` in your Python code (or the `ray_actor_options` YAML), Ray sees this as a **Logical Slot**. It means "I need a slot on a computer that has at least 4 available CPUs."
+
+### 2. Physical Resources (Pods)
+
+When you define `requests: cpu: 8` in the `workerGroupSpecs` YAML, you are asking Kubernetes for an actual, physical box with 8 CPUs.
+
+### 💖 How they work together
+
+If you build a Pod with **8 CPUs**, Ray can fit exactly **two** copies of your **4 CPU** model replica inside that one Pod!
+
+If you accidentally build a Pod with **3 CPUs**, your model replica will wait forever because it can't find a computer big enough to fit its **4 CPU** requirement.
+
+**Golden Rule:**
+`Pod CPU >= (Replica CPU * How many replicas you want per Pod) + A little extra for Ray overhead`
 
 ```text
 Physical Request >= (Sum of Replicas × Logical Request) + System Overhead
@@ -318,7 +272,7 @@ metadata:
 spec:
   type: LoadBalancer
   selector:
-    ray.io/cluster: rayservice-my-model
+    ray.io/cluster: rayservice-model
   ports:
     - port: 80
       targetPort: 8000
@@ -397,8 +351,8 @@ If deployment fails, rollback:
 # Instead, view KubeRay status and events, then re-apply a known-good spec.
 
 # Inspect current state and recent events
-kubectl get rayservice rayservice-my-model -n [namespace] -o yaml
-kubectl describe rayservice rayservice-my-model -n [namespace]
+kubectl get rayservice rayservice-model -n [namespace] -o yaml
+kubectl describe rayservice rayservice-model -n [namespace]
 
 # Check Ray Serve controller logs (usually shows the root cause)
 kubectl logs -n [namespace] -l ray.io/node-type=head --tail=200
@@ -411,7 +365,7 @@ kubectl logs -n [namespace] -l ray.io/node-type=head --tail=200
 **Check RayService status:**
 
 ```bash
-kubectl describe rayservice rayservice-my-model -n [namespace]
+kubectl describe rayservice rayservice-model -n [namespace]
 ```
 
 **Common issues:**
@@ -427,7 +381,7 @@ kubectl describe rayservice rayservice-my-model -n [namespace]
 
 ```bash
 # View dashboard
-kubectl port-forward -n [namespace] svc/rayservice-my-model-head-svc 8265:8265
+kubectl port-forward -n [namespace] svc/rayservice-model-head-svc 8265:8265
 
 # Check logs
 kubectl logs -n [namespace] -l ray.io/node-type=worker --tail=100
@@ -446,7 +400,7 @@ kubectl logs -n [namespace] -l ray.io/node-type=worker --tail=100
 
 ```bash
 # Ray dashboard: http://localhost:8265
-kubectl port-forward -n [namespace] svc/rayservice-my-model-head-svc 8265:8265
+kubectl port-forward -n [namespace] svc/rayservice-model-head-svc 8265:8265
 ```
 
 **Possible solutions:**
