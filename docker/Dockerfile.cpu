@@ -51,4 +51,5 @@ RUN sudo apt-get update && sudo apt-get -y upgrade && \
 # Cleanup
 RUN sudo apt-get remove -y --purge systemd systemd-sysv && sudo apt-get autoremove --purge -y && sudo apt-get clean && sudo rm -rf /var/lib/apt/lists/* 
 
-RUN pip install --no-cache-dir onnxruntime lz4 ratiopath "mlflow<3.0"
+RUN pip install --no-cache-dir \
+    onnxruntime lz4 ratiopath "mlflow<3.0"
