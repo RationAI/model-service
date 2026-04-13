@@ -15,8 +15,8 @@ class Config(TypedDict):
     model: dict[str, Any]
     max_batch_size: int
     batch_wait_timeout_s: float
-    intra_op_num_threads: int
     trt_cache_path: str
+    intra_op_num_threads: int
 
 
 fastapi = FastAPI()
@@ -69,7 +69,7 @@ class BinaryClassifier:
             "trt_engine_cache_path": cache_path,
             "trt_max_workspace_size": config.get(
                 "trt_max_workspace_size", 8 * 1024 * 1024 * 1024
-            ),  # type: ignore[typeddict-item]
+            ),
             "trt_builder_optimization_level": 5,
             "trt_timing_cache_enable": True,
             "trt_profile_min_shapes": min_shape,
@@ -118,7 +118,10 @@ class BinaryClassifier:
         """Run inference on a batch of images."""
         batch = np.stack(images, axis=0, dtype=np.uint8)
 
-        outputs = self.session.run([self.output_name], {self.input_name: batch})
+        outputs = self.session.run(
+            [self.output_name],
+            {self.input_name: batch},
+        )
 
         return outputs[0].flatten().tolist()  # pyright: ignore[reportAttributeAccessIssue]
 
