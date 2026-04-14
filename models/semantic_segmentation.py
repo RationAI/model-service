@@ -59,7 +59,7 @@ class SemanticSegmentation:
         # - trt_engine_cache_enable: Cache TensorRT engines to disk to avoid rebuilding on restart (default: False rebuilds every time)
         # - trt_engine_cache_path: Directory to store cached engines
         # - trt_timing_cache_enable: Cache kernel timing info to speed up subsequent engine builds (default: False is slower)
-        # - trt_builder_optimization_level: Based on config, set to 3 for good optimization without excessive build times (default: 1, which is faster to build but less optimized) (level are 1-5)
+        # - trt_builder_optimization_level: TensorRT builder optimization level taken from config (defaults to 1, which is faster to build but less optimized; levels are 1-5)
         # - trt_max_workspace_size: Memory available for TensorRT to find optimal kernels (default: 1GB)
         #   Default 1GB is insufficient for high-resolution processing, restricting valid kernels.
         #   We default to 8GB as a reasonable balance, but can be overridden via config.
