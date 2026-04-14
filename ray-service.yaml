@@ -21,7 +21,7 @@ spec:
             ray_actor_options:
               num_cpus: 4
               num_gpus: 1
-              memory: 17179869184 # 16 GiB
+              memory: 12884901888 # 12 GiB
               runtime_env:
                 env_vars:
                   MLFLOW_TRACKING_URI: http://mlflow.rationai-mlflow:5000
