@@ -6,6 +6,7 @@ import yaml
 script_dir = os.path.dirname(os.path.abspath(__file__))
 models_definitions_dir = os.path.join(script_dir, "models-definitions")
 output_file = os.path.join(script_dir, "serve-config-patch.yaml")
+base_file = os.path.join(script_dir, "..", "..", "base", "ray-service-base.yaml")
 
 model_files = [f for f in os.listdir(models_definitions_dir) if f.endswith(".yaml")]
 
@@ -13,6 +14,11 @@ if not model_files:
     raise RuntimeError(f"No model definition files found in {models_definitions_dir}")
 
 merged_applications = []
+
+with open(base_file) as f:
+    base_data = yaml.safe_load(f)
+
+rayservice_name = base_data["metadata"]["name"]
 
 for file_name in sorted(model_files):
     file_path = os.path.join(models_definitions_dir, file_name)
@@ -39,7 +45,7 @@ yaml.add_representer(LiteralString, literal_presenter)
 patch = {
     "apiVersion": "ray.io/v1",
     "kind": "RayService",
-    "metadata": {"name": "rayservice-model-split"},
+    "metadata": {"name": rayservice_name},
     "spec": {"serveConfigV2": LiteralString(serve_config_str)},
 }
 
