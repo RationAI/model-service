@@ -4,5 +4,4 @@ kind: Component
 patches:
   - target:
       kind: RayService
-      name: rayservice-model-split
     path: cpu-workers-patch.yaml

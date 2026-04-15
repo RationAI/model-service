@@ -4,5 +4,4 @@ kind: Component
 patches:
   - target:
       kind: RayService
-      name: rayservice-model-split
     path: serve-config-patch.yaml

@@ -46,6 +46,8 @@
                 mountPath: /mnt/bioptic_tree
               - name: trt-cache-volume
                 mountPath: /mnt/cache
+              - name: huggingface-cache
+                mountPath: /mnt/huggingface_cache
 
         volumes:
           - name: data
@@ -63,3 +65,6 @@
           - name: trt-cache-volume
             persistentVolumeClaim:
               claimName: tensorrt-cache-pvc
+          - name: huggingface-cache
+            persistentVolumeClaim:
+              claimName: huggingface-cache-pvc
