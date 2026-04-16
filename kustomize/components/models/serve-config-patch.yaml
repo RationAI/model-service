@@ -1,7 +1,7 @@
 apiVersion: ray.io/v1
 kind: RayService
 metadata:
-  name: rayservice-model-split
+  name: rayservice-model
 spec:
   serveConfigV2: |
     applications:
