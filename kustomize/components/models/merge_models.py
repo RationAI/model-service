@@ -32,7 +32,6 @@ for file_name in sorted(model_files):
 serve_config_str = yaml.dump({"applications": merged_applications}, sort_keys=False)
 
 
-# Literal block scalar wrapper
 class LiteralString(str):
     pass
 
