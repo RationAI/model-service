@@ -1,6 +1,6 @@
 import asyncio
 import os
-from typing import Any, TypedDict
+from typing import Any, NotRequired, TypedDict
 
 import numpy as np
 from fastapi import FastAPI, Request
@@ -9,14 +9,15 @@ from ray import serve
 
 
 class Config(TypedDict):
-    """Configuration for BinaryClassifier deployment."""
-
     tile_size: int
     model: dict[str, Any]
     max_batch_size: int
     batch_wait_timeout_s: float
     trt_cache_path: str
     intra_op_num_threads: int
+
+    trt_max_workspace_size: NotRequired[int]
+    trt_builder_optimization_level: NotRequired[int]
 
 
 fastapi = FastAPI()
@@ -58,7 +59,7 @@ class BinaryClassifier:
         # - trt_engine_cache_enable: Cache TensorRT engines to disk to avoid rebuilding on restart (default: False rebuilds every time)
         # - trt_engine_cache_path: Directory to store cached engines
         # - trt_timing_cache_enable: Cache kernel timing info to speed up subsequent engine builds (default: False is slower)
-        # - trt_builder_optimization_level: Set to 5 for maximum optimization (default: 3, which might miss optimal kernels)
+        # - trt_builder_optimization_level: TensorRT builder optimization level taken from config (defaults to 1, which is faster to build but less optimized; levels are 1-5)
         # - trt_max_workspace_size: Memory available for TensorRT to find optimal kernels (default: 1GB)
         #   Default 1GB is insufficient for high-resolution processing, restricting valid kernels.
         #   We default to 8GB as a reasonable balance, but can be overridden via config.
@@ -67,10 +68,10 @@ class BinaryClassifier:
             "trt_fp16_enable": True,
             "trt_engine_cache_enable": True,
             "trt_engine_cache_path": cache_path,
-            "trt_max_workspace_size": config.get(
-                "trt_max_workspace_size", 8 * 1024 * 1024 * 1024
+            "trt_max_workspace_size": config.get("trt_max_workspace_size", 8 * 1024**3),
+            "trt_builder_optimization_level": config.get(
+                "trt_builder_optimization_level", 1
             ),
-            "trt_builder_optimization_level": 5,
             "trt_timing_cache_enable": True,
             "trt_profile_min_shapes": min_shape,
             "trt_profile_max_shapes": max_shape,
@@ -91,10 +92,12 @@ class BinaryClassifier:
         sess_options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
 
         # Load model from provider (e.g., MLflow)
-        module_path, attr_name = config["model"].pop("_target_").split(":")
+        model_config = dict(config["model"])
+        module_path, attr_name = model_config.pop("_target_").split(":")
         provider = getattr(importlib.import_module(module_path), attr_name)
+
         self.session = ort.InferenceSession(
-            provider(**config["model"]),
+            provider(**model_config),
             providers=[
                 (
                     "TensorrtExecutionProvider",
@@ -109,13 +112,11 @@ class BinaryClassifier:
         self.input_name = self.session.get_inputs()[0].name
         self.output_name = self.session.get_outputs()[0].name
 
-        # Configure batching
         self.predict.set_max_batch_size(config["max_batch_size"])  # type: ignore[attr-defined]
         self.predict.set_batch_wait_timeout_s(config["batch_wait_timeout_s"])  # type: ignore[attr-defined]
 
     @serve.batch
     async def predict(self, images: list[NDArray[np.uint8]]) -> list[float]:
-        """Run inference on a batch of images."""
         batch = np.stack(images, axis=0, dtype=np.uint8)
 
         outputs = self.session.run(
@@ -127,7 +128,6 @@ class BinaryClassifier:
 
     @fastapi.post("/")
     async def root(self, request: Request) -> float:
-        """Handle inference request with LZ4-compressed image."""
         data = await asyncio.to_thread(self.lz4.decompress, await request.body())
 
         image = (

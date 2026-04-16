@@ -1,5 +1,5 @@
 import os
-from typing import Any, TypedDict
+from typing import Any, NotRequired, TypedDict
 
 import numpy as np
 from fastapi import FastAPI, Request, Response
@@ -16,6 +16,9 @@ class Config(TypedDict):
     intra_op_num_threads: int
     trt_cache_path: str
 
+    trt_max_workspace_size: NotRequired[int]
+    trt_builder_optimization_level: NotRequired[int]
+
 
 fastapi = FastAPI()
 
@@ -23,6 +26,8 @@ fastapi = FastAPI()
 @serve.deployment(num_replicas="auto")
 @serve.ingress(fastapi)
 class SemanticSegmentation:
+    """Semantic segmentation for tissue tiles using ONNX Runtime with GPU and TensorRT support."""
+
     tile_size: int
 
     def __init__(self) -> None:
@@ -31,6 +36,7 @@ class SemanticSegmentation:
         self.lz4 = lz4.frame
 
     def reconfigure(self, config: Config) -> None:
+        """Load the ONNX model and configure inference settings, including TensorRT options."""
         import importlib
 
         import onnxruntime as ort
@@ -54,7 +60,7 @@ class SemanticSegmentation:
         # - trt_engine_cache_enable: Cache TensorRT engines to disk to avoid rebuilding on restart (default: False rebuilds every time)
         # - trt_engine_cache_path: Directory to store cached engines
         # - trt_timing_cache_enable: Cache kernel timing info to speed up subsequent engine builds (default: False is slower)
-        # - trt_builder_optimization_level: Set to 5 for maximum optimization (default: 3, which might miss optimal kernels)
+        # - trt_builder_optimization_level: TensorRT builder optimization level taken from config (defaults to 1, which is faster to build but less optimized; levels are 1-5)
         # - trt_max_workspace_size: Memory available for TensorRT to find optimal kernels (default: 1GB)
         #   Default 1GB is insufficient for high-resolution processing, restricting valid kernels.
         #   We default to 8GB as a reasonable balance, but can be overridden via config.
@@ -63,10 +69,10 @@ class SemanticSegmentation:
             "trt_fp16_enable": True,
             "trt_engine_cache_enable": True,
             "trt_engine_cache_path": cache_path,
-            "trt_max_workspace_size": config.get(
-                "trt_max_workspace_size", 8 * 1024 * 1024 * 1024
+            "trt_max_workspace_size": config.get("trt_max_workspace_size", 8 * 1024**3),
+            "trt_builder_optimization_level": config.get(
+                "trt_builder_optimization_level", 1
             ),
-            "trt_builder_optimization_level": 5,
             "trt_timing_cache_enable": True,
             "trt_profile_min_shapes": min_shape,
             "trt_profile_max_shapes": max_shape,
@@ -86,11 +92,12 @@ class SemanticSegmentation:
         )
         sess_options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
 
-        module_path, attr_name = config["model"].pop("_target_").split(":")
+        model_config = dict(config["model"])
+        module_path, attr_name = model_config.pop("_target_").split(":")
         provider = getattr(importlib.import_module(module_path), attr_name)
 
         self.session = ort.InferenceSession(
-            provider(**config["model"]),
+            provider(**model_config),
             providers=[
                 (
                     "TensorrtExecutionProvider",
@@ -109,6 +116,7 @@ class SemanticSegmentation:
         self.predict.set_batch_wait_timeout_s(config["batch_wait_timeout_s"])  # type: ignore[attr-defined]
 
     def get_config(self) -> dict[str, Any]:
+        """Return the current configuration (tile size and mpp)."""
         return {"tile_size": self.tile_size, "mpp": self.mpp}
 
     @serve.batch
@@ -117,7 +125,6 @@ class SemanticSegmentation:
     ) -> list[NDArray[np.float16]]:
         batch = np.stack(images, axis=0, dtype=np.uint8)
         outputs = self.session.run([self.output_name], {self.input_name: batch})
-
         return list(outputs[0].astype(np.float16))
 
     @fastapi.post("/")
@@ -126,9 +133,7 @@ class SemanticSegmentation:
         image = np.frombuffer(data, dtype=np.uint8).reshape(
             self.tile_size, self.tile_size, 3
         )
-
         prediction = await self.predict(image.transpose(2, 0, 1))
-
         return Response(
             content=self.lz4.compress(prediction.tobytes()),
             media_type="application/octet-stream",
