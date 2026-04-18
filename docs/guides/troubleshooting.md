@@ -7,16 +7,16 @@ This page lists the most common issues when deploying and running models in Mode
 Start here before digging deeper:
 
 ```bash
-kubectl get rayservice -n [namespace]
-kubectl describe rayservice rayservice-models -n [namespace]
-kubectl get pods -n [namespace]
+kubectl get rayservice -n rationai-jobs-ns
+kubectl describe rayservice rayservice-model -n rationai-jobs-ns
+kubectl get pods -n rationai-jobs-ns
 ```
 
 Then inspect logs:
 
 ```bash
-kubectl logs -n [namespace] -l ray.io/node-type=head --tail=200
-kubectl logs -n [namespace] -l ray.io/node-type=worker --tail=200
+kubectl logs -n rationai-jobs-ns -l ray.io/node-type=head --tail=200
+kubectl logs -n rationai-jobs-ns -l ray.io/node-type=worker --tail=200
 ```
 
 ## RayService Shows `DEPLOY_FAILED`
@@ -30,13 +30,13 @@ Ray Serve could not start the application or deployment. The root cause is typic
 1. Describe the RayService for events:
 
 ```bash
-kubectl describe rayservice rayservice-models -n [namespace]
+kubectl describe rayservice rayservice-model -n rationai-jobs-ns
 ```
 
 2. Open the Ray dashboard (helps with Serve deployment errors):
 
 ```bash
-kubectl port-forward -n [namespace] svc/rayservice-models-head-svc 8265:8265
+kubectl port-forward -n rationai-jobs-ns svc/rayservice-model-head-svc 8265:8265
 ```
 
 Visit `http://localhost:8265`.
@@ -44,7 +44,7 @@ Visit `http://localhost:8265`.
 3. Look for Python import errors / missing dependencies:
 
 ```bash
-kubectl logs -n [namespace] -l ray.io/node-type=worker --tail=500
+kubectl logs -n rationai-jobs-ns -l ray.io/node-type=worker --tail=500
 ```
 
 ## ImportError / ModuleNotFoundError
@@ -101,7 +101,7 @@ You must increase **both** the Ray logical allocation and the Kubernetes physica
    ```
 
 2. Increase Kubernetes container limits (Hardware limit):
-   Ensure the `workerGroupSpecs` in `ray-service.yaml` provides **more** memory than the sum of all actors on that node plus overhead (~30%).
+   Ensure the `workerGroupSpecs` in your base Kustomize configuration (`kustomize/base/` or component patches) provides **more** memory than the sum of all actors on that node plus overhead (~30%).
 
    ```yaml
    resources:
@@ -150,7 +150,6 @@ Also ensure `workerGroupSpecs[*].minReplicas/maxReplicas` allow scaling.
 ### Fix
 
 1.  **Check Physical vs Logical**:
-
     - _Physical_: Can K8s schedule the pod? `kubectl describe pod` will show if nodes are full.
     - _Logical_: Can Ray schedule the actor? Check `ray status` or the dashboard. Ray might say "0/X CPUs available" even if the pod exists, because other actors consumed the slots.
 
@@ -161,7 +160,7 @@ Also ensure `workerGroupSpecs[*].minReplicas/maxReplicas` allow scaling.
 Inspect pod scheduling events:
 
 ```bash
-kubectl describe pod <pod-name> -n [namespace]
+kubectl describe pod <pod-name> -n rationai-jobs-ns
 ```
 
 ## MLflow / Artifact Download Problems
@@ -177,7 +176,7 @@ kubectl describe pod <pod-name> -n [namespace]
 - Ensure the cluster has network access (proxy settings if needed).
 - Verify the `artifact_uri` exists and permissions are correct.
 
-In `ray-service.yaml` this is typically configured via `env_vars`:
+In your model's Kustomize YAML definition this is typically configured via `env_vars`:
 
 ```yaml
 ray_actor_options:
@@ -190,9 +189,9 @@ ray_actor_options:
 
 ```bash
 # list Serve and RayService resources
-kubectl get rayservice -n [namespace]
-kubectl get svc -n [namespace]
+kubectl get rayservice -n rationai-jobs-ns
+kubectl get svc -n rationai-jobs-ns
 
 # see all pods for a RayService
-kubectl get pods -n [namespace] -l ray.io/cluster=rayservice-models
+kubectl get pods -n rationai-jobs-ns -l ray.io/cluster=rayservice-model
 ```

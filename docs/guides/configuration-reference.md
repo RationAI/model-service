@@ -1,59 +1,56 @@
 # Configuration Reference
 
-Welcome to the control room! 🎛️ Here, you'll learn how to tweak Model Service to perfectly fit your needs. Don't worry, we'll cover the **most important knobs** so you don't get overwhelmed.
+This guide provides a reference for configuring Model Service. You will learn the core properties required to scale deployments and manage resources using Kustomize.
 
-If you ever need the super-detailed, nitty-gritty API details, you can always check out the upstream Ray Serve and KubeRay documentation. But for 99% of your work, this page is all you need!
+For a complete reference of the Ray Service API, you can consult the upstream Ray Serve and KubeRay documentation.
 
-## 1. The Anatomy of a RayService
+## 1. Anatomy of a Model Service Application
 
-Let's look at the basic skeleton of your configuration file:
+Model Service uses **Kustomize** to manage Kubernetes manifests. Configuration is maintained in the `kustomize/components/models/models-definitions/` directory.
+
+To define an application, add a YAML file (e.g. `my-model.yaml`) to the `models-definitions` directory:
 
 ```yaml
-apiVersion: ray.io/v1
-kind: RayService
-metadata:
-  name: <service-name>
-  namespace: [namespace]
-spec:
-  serveConfigV2: |
-    # Your Apps go here!
-  rayClusterConfig:
-    # Your Cluster settings go here!
+applications:
+  - name: my-model
+    import_path: models.my_model:app
+    route_prefix: /my-model
 ```
 
-Think of this file in two main parts:
+A python script (`merge_models.py`) combines output from the `models-definitions` directory into a unified `RayService` definition when executed via `./deploy.sh`.
 
-- **`serveConfigV2`**: **What** you are serving. (Your Python apps, autoscaling rules, API routes).
-- **`rayClusterConfig`**: **Where** it runs. (How big the computers are, how many CPUs/GPUs you need).
+This file instructs KubeRay on:
+
+- **Serving definitions**: Your Python execution endpoints, autoscaling bounds, and route paths.
+- **Resource requests**: Cluster node capacities and compute allocation (CPUs/GPUs).
 
 ---
 
-## 2. Setting Up Your Applications
+## 2. Configuring Application Endpoints
 
-An application is the endpoint clients will talk to. Let's configure one!
+An application is the interface clients use to communicate with your deployment. Let's configure one in the `models-definitions/` directory:
 
 ```yaml
-serveConfigV2: |
-  applications:
-    - name: prostate-classifier
-      import_path: models.binary_classifier:app
-      route_prefix: /prostate-classifier
-      runtime_env:
-        working_dir: https://.../model-service-main.zip
-        pip:
-          - onnxruntime>=1.23.2
+applications:
+  - name: prostate-classifier
+    import_path: models.binary_classifier:app
+    route_prefix: /prostate-classifier
+    runtime_env:
+      working_dir: https://.../model-service-main.zip
+      pip:
+        - onnxruntime>=1.23.2
 ```
 
-**Let's break that down:**
+**Property Breakdown:**
 
-- `name`: A friendly name you'll see in the dashboard.
-- `import_path`: Where is your Python code? Tell it the module and variable (like `models.binary_classifier:app`).
-- `route_prefix`: The URL magic. If you set this to `/prostate-classifier`, requests go to `http://<serve-host>:8000/prostate-classifier/...`.
-- `runtime_env`: What does your code need to run? You can specify a zip file of your code (`working_dir`) and Python packages (`pip`).
+- `name`: The logical name of the application, used in the Ray dashboard and logs.
+- `import_path`: The path to the Python entrypoint, structured as `module.path:variable`.
+- `route_prefix`: The HTTP path root used for the Serve gateway.
+- `runtime_env`: Configuration for dynamically loading dependent code and libraries. (See [RayService Configuration](../guides/adding-models.md#rayservice-configuration)).
 
-### Deployments: Controlling Scale and Power
+### Regulating Scale with Deployments
 
-Inside your application, you have "deployments". This is where you tell the system how much power each model needs.
+Inside an application, "deployments" define computational capacity and scaling limits.
 
 ```yaml
 deployments:
@@ -72,66 +69,66 @@ deployments:
       threshold: 0.5
 ```
 
-- `autoscaling_config`: Should we scale up automatically when busy? Here's where you decide!
-- `ray_actor_options`: How beefy is this model? Does it need 6 CPUs? 5 GiB of RAM?
-- `user_config`: A cool feature that lets you pass custom settings right into your Python code's `reconfigure()` method on the fly!
+- `autoscaling_config`: Dictates how the system automatically scales worker replicas in response to incoming traffic.
+- `ray_actor_options`: Specifies computation requirements per replica, such as CPUs or memory.
+- `user_config`: Key-value properties passed directly into your Python model's `reconfigure()` function.
 
 ---
 
-## 2.1 The Art of Backpressure (Super Important!)
+## 2.1 Backpressure and Concurrency
 
-Let's talk about traffic jams. What happens when too many requests hit your model at once? You have two important tools to manage this:
+To ensure stability under heavy load, Model Service provides variables to handle backpressure. Using these variables correctly prevents models from crashing.
 
-### `max_ongoing_requests` (The Door Coder)
+### `max_ongoing_requests`
 
-**What it is:** How many requests a _single_ replica is allowed to work on simultaneously.
-**Why you care:** If your model takes a lot of memory per request, setting this too high will crash your pod with an Out of Memory error! If a request tries to enter but the limit is reached, it waits in line.
+**Definition:** The maximum number of requests a single replica can process concurrently.
+**Usage:** Configure this variable based on the memory overhead per request. Exceeding available memory will result in Pod crashes. Requests that exceed this threshold wait in an input queue unless `max_queued_requests` is reached.
 
-### `max_queued_requests` (The Bouncer)
+### `max_queued_requests`
 
-**What it is:** The size of the waiting line outside the club.
-**Why you care:** If the line gets completely full, the Bouncer starts turning people away (rejecting requests). This is great because it prevents your whole system from slowing to a crawl.
+**Definition:** The maximum total queue size representing requests waiting for an available replica.
+**Usage:** When this limit is reached, incoming requests are rejected to prevent system-wide degradation.
 
-> **Pro Tip:** Keep `max_ongoing_requests` safe for your replica's memory, and use `max_queued_requests` to decide whether you'd rather clients wait, or get a quick "too busy" error.
-
----
-
-## 2.2 Mastering Autoscaling
-
-How does the system know when to add more replicas?
-
-### The Magic Number: `target_ongoing_requests`
-
-This is the most important scaling setting. It means: "Try to keep the average number of active requests per replica close to this number."
-
-**How it works:**
-If `target_ongoing_requests` is `20`, and you suddenly get `100` concurrent requests, the system will look at the math (`100 / 20 = 5`) and quickly spin up `5` replicas for you!
-
-- **Want it to scale up fast?** Set this lower.
-- **Can your model handle a ton of traffic easily?** Set this higher!
-
-### `min_replicas` and `max_replicas`
-
-- **Scale to Zero (`min: 0`)**: Great for saving money! If no one is using the model, it shuts down completely. Just know that the _next_ person to call it will have to wait a few seconds for it to start up again (a "cold start").
-- **Always Ready (`min: 1` or more)**: The model is always running, ready to answer instantly.
+> **Note:** Set `max_ongoing_requests` according to your application's per-request footprint, and configure `max_queued_requests` based on your desired trade-off between wait times and immediate error feedback.
 
 ---
 
-## 3. Configuring the Ray Cluster (The Hardware)
+## 2.2 Autoscaling Strategies
 
-Now let's talk about the actual Kubernetes Pods that will run your code.
+Autoscaling adds replicas during traffic spikes and decreases replicas during idle periods.
+
+### Property: `target_ongoing_requests`
+
+The target defines the desired number of concurrent requests per replica.
+
+**Mechanism:**
+The autoscaler attempts to adjust the number of active replicas to keep the average number of requests per replica matched to this value.
+If `target_ongoing_requests` is `20`, and there are `100` incoming concurrent requests, the system scales up to `5` replicas automatically.
+
+- **For aggressive scale-up**, select a lower target.
+- **For high-throughput models**, increase the target.
+
+### Properties: `min_replicas` and `max_replicas`
+
+- **Scale to Zero (`min_replicas: 0`)**: Retains no instances of the container structure when there is zero traffic. Useful for saving resource costs. Note that zero-scale triggers a _cold start_ penalty (delay) on the next request.
+- **Always Active (`min_replicas: 1` or higher)**: Keeps minimal instances permanently initialized to serve traffic without cold starts.
+
+---
+
+## 3. Configuring the Cluster Resources
+
+Your logic execution requires physical computation allocation on worker `Pods`.
 
 ```yaml
 rayClusterConfig:
-  rayVersion: "2.52.1"
+  rayVersion: "2.53.0"
   headGroupSpec:
     rayStartParams:
-      num-cpus: "0" # The head node is just the manager!
+      num-cpus: "0"
     template:
       spec:
         containers:
           - name: ray-head
-          # ... image details
   workerGroupSpecs:
     - groupName: cpu-workers
       replicas: 1
@@ -148,17 +145,15 @@ rayClusterConfig:
                   memory: "16Gi"
 ```
 
-### The Golden Rule of Worker Sizing
+### Pitfall: Logical vs. Physical Scaling Defaults
 
-Here is the secret to avoiding headaches:
+It is crucial to verify that the target K8s Pod (`resources.requests`) fulfills or exceeds the memory specified in the application deployment options (`ray_actor_options`).
 
-**Your K8s Pod (worker `resources.requests`) MUST be bigger than your Model Requirement (`ray_actor_options`).**
+- If the Pod `cpu` request is `4`.
+- If the model replica `num_cpus` specifies `2`.
+- You can run **2** running replicas per Pod.
 
-- **Physical World:** Your Pod has `4` CPUs.
-- **Logical World:** Your model asks for `2` CPUs.
-- **Result:** You can fit exactly `2` copies (replicas) of your model on that one Pod!
-
-If your model asks for `5` CPUs but your Pod only gives `4`, your model will sit in `Pending` forever, waiting for a bigger computer that will never arrive.
+If a deployment requests `5` CPUs while maximum Pod resources represent `4` CPUs, the system cannot schedule the replica, leaving the replica stuck in a `Pending` state.
 
 ---
 
@@ -186,7 +181,7 @@ apiVersion: ray.io/v1
 kind: RayService
 metadata:
   name: rayservice-example
-  namespace: rationai-notebooks-ns
+  namespace: rationai-jobs-ns
 spec:
   serveConfigV2: |
     applications:
@@ -202,7 +197,7 @@ spec:
             ray_actor_options:
               num_cpus: 4
   rayClusterConfig:
-    rayVersion: "2.52.1"
+    rayVersion: "2.53.0"
     enableInTreeAutoscaling: true
     headGroupSpec:
       rayStartParams:

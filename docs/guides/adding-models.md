@@ -8,7 +8,7 @@ To add a new model, you need to:
 
 1. Create a model class with Ray Serve decorators
 2. Implement the inference logic
-3. Configure the RayService YAML
+3. Configure the model in `kustomize/components/models/models-definitions/`
 4. Deploy and test
 
 ## Model Implementation
@@ -18,25 +18,25 @@ To add a new model, you need to:
 Create a Python file in the `models/` directory:
 
 ```python
+from fastapi import FastAPI, Request
 from ray import serve
-from starlette.requests import Request
+
+app_ingress = FastAPI()
 
 @serve.deployment(ray_actor_options={"num_cpus": 2})
+@serve.ingress(app_ingress)
 class MyModel:
     def __init__(self):
         # Load your model here
         pass
 
-    async def __call__(self, request: Request):
+    @app_ingress.post("/")
+    async def predict(self, request: Request):
         # Handle inference requests
         data = await request.json()
         # Process data and return prediction
-        result = self.predict(data)
+        result = data
         return {"prediction": result}
-
-    def predict(self, data: dict):
-        # Replace with your own inference logic
-        return data
 
 app = MyModel.bind()
 ```
@@ -87,10 +87,11 @@ Ray allows fractional resource requests. This lets you pack multiple small repli
 
 #### 4. Inference Method
 
-Implement `__call__` or other methods for handling requests:
+To handle requests, implement routes using the `@app_ingress.post` pattern (for FastAPI) instead of the standard `__call__` method.
 
 ```python
-async def __call__(self, request: Request):
+@app_ingress.post("/")
+async def predict(self, request: Request):
     data = await request.json()
     input_data = self.preprocess(data["input"])
 
@@ -118,13 +119,13 @@ class ConfigurableModel:
     def __init__(self):
         self.model = load_model()
 
-  def reconfigure(self, config: Config):
+    def reconfigure(self, config: Config):
         self.threshold = config["threshold"]
         self.batch_size = config["batch_size"]
         print(f"Reconfigured: threshold={self.threshold}")
 ```
 
-Update config via RayService YAML:
+Update config via your model definition YAML:
 
 ```yaml
 user_config:
@@ -137,7 +138,10 @@ user_config:
 Use `@serve.batch` for efficient batch processing:
 
 ```python
+app_ingress = FastAPI()
+
 @serve.deployment
+@serve.ingress(app_ingress)
 class BatchedModel:
     def __init__(self):
         self.model = load_model()
@@ -148,7 +152,8 @@ class BatchedModel:
         outputs = self.model(batch)
         return outputs.tolist()
 
-    async def __call__(self, request: Request):
+    @app_ingress.post("/")
+    async def process_request(self, request: Request):
         data = await request.json()
         input_data = np.array(data["input"])
         result = await self.predict_batch(input_data)
@@ -197,9 +202,14 @@ Use the model provider to load from MLflow:
 
 ```python
 # models/mlflow_model.py
+from fastapi import FastAPI, Request
+from ray import serve
 from providers.model_provider import mlflow
 
+app_ingress = FastAPI()
+
 @serve.deployment
+@serve.ingress(app_ingress)
 class MLflowModel:
     def __init__(self):
         # This will be set via user_config
@@ -213,7 +223,8 @@ class MLflowModel:
         import onnxruntime as ort
         self.session = ort.InferenceSession(self.model_path)
 
-    async def __call__(self, request: Request):
+    @app_ingress.post("/")
+    async def predict(self, request: Request):
         # Inference logic
         ...
 
@@ -233,34 +244,32 @@ user_config:
 
 ## RayService Configuration
 
-Add your model to `ray-service.yaml`:
+Add your model file to `kustomize/components/models/models-definitions/my-model.yaml`:
 
 ```yaml
-spec:
-  serveConfigV2: |
-    applications:
-      - name: my-model
-        import_path: models.my_onnx_model:app
-        route_prefix: /my-model
-        runtime_env:
-          working_dir: https://github.com/RationAI/model-service/archive/refs/heads/main.zip
-          pip:
-            - onnxruntime>=1.23.2
-            - numpy
-        deployments:
-          - name: MyONNXModel
-            autoscaling_config:
-              min_replicas: 1
-              max_replicas: 4
-            ray_actor_options:
-              num_cpus: 2
-              memory: 4294967296  # 4 GiB
-              runtime_env:
-                pip:
-                  - onnxruntime>=1.23.2
+applications:
+  - name: my-model
+    import_path: models.my_onnx_model:app
+    route_prefix: /my-model
+    runtime_env:
+      working_dir: https://github.com/RationAI/model-service/archive/refs/heads/main.zip
+      pip:
+        - onnxruntime>=1.23.2
+        - numpy
+    deployments:
+      - name: MyONNXModel
+        autoscaling_config:
+          min_replicas: 1
+          max_replicas: 4
+        ray_actor_options:
+          num_cpus: 2
+          memory: 4294967296 # 4 GiB
+          runtime_env:
+            pip:
+              - onnxruntime>=1.23.2
 ```
 
-In this repository, the production `ray-service.yaml` installs model dependencies under `deployments[*].ray_actor_options.runtime_env.pip` (not only at `applications[*].runtime_env`). This is useful when different deployments need different dependencies.
+In this repository, model dependencies can be installed under `deployments[*].ray_actor_options.runtime_env.pip` (not only at `applications[*].runtime_env`). This is useful when different deployments need different dependencies.
 
 ## GPU Models
 
@@ -268,6 +277,7 @@ For GPU-accelerated models:
 
 ```python
 @serve.deployment(ray_actor_options={"num_gpus": 1})
+@serve.ingress(app_ingress)
 class GPUModel:
     def __init__(self):
         import torch
@@ -276,7 +286,8 @@ class GPUModel:
         self.model = torch.load("model.pt").to(self.device)
         self.model.eval()
 
-    async def __call__(self, request: Request):
+    @app_ingress.post("/")
+    async def predict(self, request: Request):
         data = await request.json()
         input_tensor = torch.tensor(data["input"]).to(self.device)
 
@@ -286,40 +297,30 @@ class GPUModel:
         return {"prediction": output.cpu().numpy().tolist()}
 ```
 
-Configure GPU worker group:
-
-```yaml
-workerGroupSpecs:
-  - groupName: gpu-workers
-    replicas: 0
-    minReplicas: 0
-    maxReplicas: 2
-    template:
-      spec:
-        nodeSelector:
-          nvidia.com/gpu.product: NVIDIA-A40
-        containers:
-          - name: ray-worker
-            image: rayproject/ray:2.52.1-py312-gpu
-            resources:
-              limits:
-                nvidia.com/gpu: 1
-```
+Ensure your deployment specifies `num_gpus` greater than `0`. Model Service natively provides a **GPU workers** configuration. The Kustomize build step handles assigning `nvidia.com/gpu` automatically when the `gpu-workers` component is included in `kustomize/overlays/kustomization.yaml`.
 
 ## Deployment
 
 Deploy your model:
 
 ```bash
-kubectl apply -f ray-service.yaml -n [namespace]
+./deploy.sh
 ```
 
 Monitor deployment:
 
 ```bash
-kubectl get rayservice -n [namespace]
-kubectl logs -n [namespace] -l ray.io/node-type=worker --tail=100
+kubectl get rayservice -n rationai-jobs-ns
+kubectl logs -n rationai-jobs-ns -l ray.io/node-type=worker --tail=100
 ```
+
+Open the Ray dashboard:
+
+```bash
+kubectl port-forward -n rationai-jobs-ns svc/rayservice-model-head-svc 8265:8265
+```
+
+Then visit `http://127.0.0.1:8265`.
 
 ## Best Practices
 

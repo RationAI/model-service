@@ -1,25 +1,27 @@
 # Deployment Guide
 
-Ready to go live? 🚀 Let's take your awesome local model and deploy it to a production cluster!
+In this guide, you will transition a locally tested model to a production environment in Kubernetes.
 
-By the end of this guide, you will have a robust, scalable service running in Kubernetes. Grab a coffee, and let's go!
+You will learn:
 
-## Are we ready for liftoff?
+- How to structure your Python code for scalable processing using Ray Serve.
+- How to configure a Kustomize application definition for your model.
+- How to identify and avoid common resource allocation pitfalls.
 
-Before we push the big red button, let's do a quick pre-flight check:
+## Prerequisites
 
-- [x] Is the KubeRay operator installed on your cluster?
-- [x] Do you have your target namespace ready? (e.g. `rationai-notebooks-ns`)
-- [x] Have you tested your Python code locally?
-- [x] (Optional) Can your cluster reach MLflow to download model weights?
+Before deploying your model, verify the following prerequisites:
 
-Everything checked? Great! Let's deploy.
+- The KubeRay operator is installed and functioning on your cluster.
+- You have access to a target namespace (e.g., `rationai-jobs-ns`).
+- Your Python code executes successfully in a standard local environment.
+- Your cluster has necessary network access (e.g., MLflow, S3) to download model weights.
 
 ---
 
-## Step 1: Prep your Python code
+## Step 1: Prepare the Python Model
 
-First, let's make sure your Python code is structured correctly for Model Service. Create a file in `models/` (let's call it `my_model.py`):
+Model Service requires an entrypoint properly decorated for Ray Serve. Create a file inside the repository's root `models/` directory (e.g., `models/my_model.py`):
 
 ```python
 # models/my_model.py
@@ -27,7 +29,6 @@ from typing import TypedDict
 from fastapi import FastAPI, Request
 from ray import serve
 
-# A clean way to type our dynamic config!
 class Config(TypedDict):
     threshold: float
 
@@ -37,18 +38,17 @@ app_ingress = FastAPI()
 @serve.ingress(app_ingress)
 class MyModel:
     def __init__(self):
-        # We load the weights ONCE when the replica starts
+        # Initialize heavy dependencies or weights once per replica
         self.model = self.load_model_once()
-        self.threshold = 0.5 # Default
+        self.threshold = 0.5
 
     def load_model_once(self):
-        print("Pretend I'm loading an expensive model right now...")
+        # Initialization logic
         return object()
 
     def reconfigure(self, config: Config):
-        # This gets called dynamically if we update the YAML!
-        self.threshold = config["threshold"]
-        print(f"Updated threshold to {self.threshold}")
+        # Ray automatically triggers this when you update the YAML configuration
+        self.threshold = config.get("threshold", 0.5)
 
     @app_ingress.post("/")
     async def predict(self, request: Request):
@@ -56,129 +56,122 @@ class MyModel:
         score = float(data["input"])
         return {"score": score, "label": score >= self.threshold}
 
-# This is what Ray looks for!
 app = MyModel.bind()
 ```
 
-Look how elegant that is! We load our model weights once in the `__init__`, we accept dynamic updates via `reconfigure()`, and we handle HTTP traffic with standard FastAPI.
+### Note: Why use `__init__` and `reconfigure`?
+
+- **`__init__`**: Executes once when the replica initializes. Ideal for static components like loading neural network weights into memory.
+- **`reconfigure`**: Executes automatically when the application receives dynamic configuration updates via Kustomize or the cluster management API.
+- **`FastAPI` Route (`@app_ingress.post`)**: Binds an external HTTP endpoint to accept standard JSON formatting directly.
 
 ---
 
-## Step 2: Write your RayService YAML
+## Step 2: Add your Kustomize YAML definition
 
-Now we need to tell Kubernetes about our cool new app. Open `ray-service.yaml` and add an entry under `applications`:
+Kubernetes requires the resource specification associated with the code. Create a file named `my-model.yaml` within `kustomize/components/models/models-definitions/`:
 
 ```yaml
-spec:
-  serveConfigV2: |
-    applications:
-      - name: my-model
-        # Point to the code we just wrote!
-        import_path: models.my_model:app 
-        route_prefix: /my-model
-        
-        runtime_env:
-          # Where to download your code from
-          working_dir: https://gitlab.ics.muni.cz/rationai/infrastructure/model-service/-/archive/master/model-service-master.zip
-        
-        deployments:
-          - name: MyModel
-            # Don't let replicas get overwhelmed!
-            max_ongoing_requests: 32
-            max_queued_requests: 64
-            
-            autoscaling_config:
-              min_replicas: 0 # Spin down to save money when idle!
-              max_replicas: 4
-              target_ongoing_requests: 16
-              
-            ray_actor_options:
-              num_cpus: 2 # Give each replica 2 CPUs
-              runtime_env:
-                pip:
-                  - fastapi
+applications:
+  - name: my-model
+    import_path: models.my_model:app
+    route_prefix: /my-model
+
+    runtime_env:
+      working_dir: https://gitlab.ics.muni.cz/rationai/infrastructure/model-service/-/archive/master/model-service-master.zip
+
+    deployments:
+      - name: MyModel
+        max_ongoing_requests: 32
+        max_queued_requests: 64
+
+        autoscaling_config:
+          min_replicas: 0
+          max_replicas: 4
+          target_ongoing_requests: 16
+
+        ray_actor_options:
+          num_cpus: 2
+          runtime_env:
+            pip:
+              - fastapi
 ```
 
 ---
 
-## Step 3: Deploy to Kubernetes! 🚢
+## Step 3: Deploy
 
-In your terminal, apply the configuration to your specific namespace:
+The configuration relies on Kustomize to inject your deployment components. Deploy it by executing the shell script:
 
 ```bash
-kubectl apply -f ray-service.yaml -n your-favorite-namespace
+./deploy.sh
+```
+
+This compiles your definitions and provisions the deployment on the target cluster namespace.
+
+---
+
+## Step 4: Monitor the Deployment
+
+Ray performs several bootstrap steps, including node assignment, code extraction, and package installation. Monitor progress using `kubectl`:
+
+```bash
+# Monitor logical Ray Serve applications continuously
+kubectl get rayservice rayservice-model -n rationai-jobs-ns -w
+
+# Monitor physical pod scheduling limits
+kubectl get pods -n rationai-jobs-ns -l ray.io/cluster=rayservice-model
+```
+
+If Ray service remains offline, monitor the Ray head node logs:
+
+```bash
+kubectl logs -n rationai-jobs-ns -l ray.io/node-type=head -f
 ```
 
 ---
 
-## Step 4: Watch the magic happen
+## Step 5: Test the Endpoint
 
-Ray is now waking up computers, downloading your zipped code, pip-installing FastAPI, and spinning up your replicas. Let's watch the progress:
-
-```bash
-# Watch the high-level status (press Ctrl+C to exit)
-kubectl get rayservice rayservice-model -n your-favorite-namespace -w
-
-# Check on the workers!
-kubectl get pods -n your-favorite-namespace -l ray.io/cluster=rayservice-model
-```
-
-If you ever get stuck, looking at the logs is the easiest way to figure out what happened:
+When the application indicates `RUNNING`, forward the service port locally:
 
 ```bash
-# What is the Ray head node doing?
-kubectl logs -n your-favorite-namespace -l ray.io/node-type=head -f
+kubectl port-forward -n rationai-jobs-ns svc/rayservice-model-serve-svc 8000:8000
 ```
 
----
-
-## Step 5: Test it out!
-
-Once the status says `RUNNING`, it's time to talk to your model! Since you're on your local laptop, use port-forwarding to create a tunnel to the cluster:
-
-```bash
-kubectl port-forward -n your-favorite-namespace svc/rayservice-model-serve-svc 8000:8000
-```
-
-Now try hitting it with a request! (Since we used FastAPI, we can just send JSON):
+Transmit a JSON payload to test the interface:
 
 ```bash
 curl -X POST http://localhost:8000/my-model/ -H "Content-Type: application/json" -d '{"input": 0.8}'
 ```
 
-🎉 Boom! Production response!
-
 ---
 
-## 🤯 The Biggest Production Trap: Pods vs Replicas
+## Pitfall: Understanding Pods vs. Replicas
 
-Before you deploy real models, you _must_ know the difference between Pods and Replicas. Getting this wrong is the #1 reason why models get stuck in "Pending".
+The most critical production configuration error stems from confusing physical Kubernetes Pods with logical Ray Replicas.
 
-### 1. Logical Resources (Replicas)
+### 1. Logical Capacity (Replicas)
 
-When you write `num_cpus: 4` in your Python code (or the `ray_actor_options` YAML), Ray sees this as a **Logical Slot**. It means "I need a slot on a computer that has at least 4 available CPUs."
+Assigning `num_cpus: 4` under `ray_actor_options` requires Ray to allocate logical execution space matching 4 CPUs per Replica object. This process searches inside available Worker Pods.
 
-### 2. Physical Resources (Pods)
+### 2. Physical Capacity (Pods)
 
-When you define `requests: cpu: 8` in the `workerGroupSpecs` YAML, you are asking Kubernetes for an actual, physical box with 8 CPUs.
+Defining `cpu: 8` under `workerGroupSpecs` limits Kubernetes to construct a hardware-aligned worker context representing 8 CPUs.
 
-### 💖 How they work together
+### The Relationship
 
-If you build a Pod with **8 CPUs**, Ray can fit exactly **two** copies of your **4 CPU** model replica inside that one Pod!
+A Worker Pod with **8 CPUs** can effectively host **two copies** of a logical Replica requesting **4 CPUs**.
 
-If you accidentally build a Pod with **3 CPUs**, your model replica will wait forever because it can't find a computer big enough to fit its **4 CPU** requirement.
+If a Pod possesses **3 CPUs**, a **4 CPU** Replica continuously fails to provision because there is no single physical environment structurally capable of accommodating the required footprint. The status resolves continuously to "Pending".
 
-**Golden Rule:**
-`Pod CPU >= (Replica CPU * How many replicas you want per Pod) + A little extra for Ray overhead`
+> **Requirement:**
+> `Physical Pod CPU >= (Logical Replica CPU * Expected Replicas Per Pod) + Overhead`
 
-```text
-Physical Request >= (Sum of Replicas × Logical Request) + System Overhead
-```
+**Resource Buffer Defaults:**
 
-**Recommended Overhead Buffer:**
-
-- **CPU**: Add 0.5 - 2 CPU cores per pod for Ray system processes.
-- **Memory**: Add 1-2 GiB + 30% of object store size.
+- **CPU**: Add approximately 0.5 - 2.0 processor cores per node to support Ray backend processes.
+- **Memory**: Add approximately 1 - 2 GiB for caching objects plus ~30% size variation bounds to avoid OOM termination.
 
 #### Example Calculation
 
@@ -217,7 +210,7 @@ autoscaling_config:
 3.  **`downscale_delay_s`**:
     - Keep this high (e.g., `600s`) to avoid "thrashing". It is cheaper to keep an idle replica for 10 minutes than to re-initialize a heavy model (loading weights, etc.) every time traffic dips for a minute.
 
-For the exact formulas and definitions of these settings, see the [Configuration Reference](configuration-reference.md#22-autoscaling-settings-what-they-actually-mean).
+For the exact formulas and definitions of these settings, see the [Configuration Reference](configuration-reference.md#22-autoscaling-strategies).
 
 ### High Availability
 
@@ -280,44 +273,46 @@ spec:
 
 ## Multi-Model Deployment
 
-Deploy multiple models in one RayService:
+Deploy multiple models by adding multiple application definitions to your Kustomize `models-definitions/` directory. Each file will be merged automatically:
 
 ```yaml
-serveConfigV2: |
-  applications:
-    - name: model-a
-      import_path: models.model_a:app
-      route_prefix: /model-a
-      deployments:
-        - name: ModelA
-          ray_actor_options:
-            num_cpus: 4
-    
-    - name: model-b
-      import_path: models.model_b:app
-      route_prefix: /model-b
-      deployments:
-        - name: ModelB
-          ray_actor_options:
-            num_gpus: 1
+# kustomize/components/models/models-definitions/model-a.yaml
+applications:
+  - name: model-a
+    import_path: models.model_a:app
+    route_prefix: /model-a
+    deployments:
+      - name: ModelA
+        ray_actor_options:
+          num_cpus: 4
+
+# kustomize/components/models/models-definitions/model-b.yaml
+applications:
+  - name: model-b
+    import_path: models.model_b:app
+    route_prefix: /model-b
+    deployments:
+      - name: ModelB
+        ray_actor_options:
+          num_gpus: 1
 ```
 
 ## Updating Deployments
 
 ### Update Model Code
 
-1. Update code in repository
-2. Commit and push changes
-3. RayService will automatically fetch new code from `working_dir` URL
+1. Update code in the repository.
+2. Commit and push your changes.
+3. KubeRay will automatically fetch the new code from the `working_dir` URL on the next deployment.
 
 ### Update Configuration
 
 ```bash
-# Edit configuration
-vim ray-service.yaml # or any IDE
+# Edit configuration in models-definitions/
+vim kustomize/components/models/models-definitions/my-model.yaml
 
-# Apply changes
-kubectl apply -f ray-service.yaml -n [namespace]
+# Apply changes using the deploy script
+./deploy.sh
 ```
 
 KubeRay will reconcile the RayService and attempt a rolling-style update:
@@ -328,7 +323,7 @@ KubeRay will reconcile the RayService and attempt a rolling-style update:
 
 ### Update Model Weights
 
-If using MLflow:
+If using MLflow, update the tracked artifact inside your application's YAML definition:
 
 ```yaml
 user_config:
@@ -336,10 +331,10 @@ user_config:
     artifact_uri: mlflow-artifacts:/65/NEW_RUN_ID/model.onnx
 ```
 
-Apply update:
+Apply the update:
 
 ```bash
-kubectl apply -f ray-service.yaml -n [namespace]
+./deploy.sh
 ```
 
 ## Rollback
@@ -351,11 +346,11 @@ If deployment fails, rollback:
 # Instead, view KubeRay status and events, then re-apply a known-good spec.
 
 # Inspect current state and recent events
-kubectl get rayservice rayservice-model -n [namespace] -o yaml
-kubectl describe rayservice rayservice-model -n [namespace]
+kubectl get rayservice rayservice-model -n rationai-jobs-ns -o yaml
+kubectl describe rayservice rayservice-model -n rationai-jobs-ns
 
 # Check Ray Serve controller logs (usually shows the root cause)
-kubectl logs -n [namespace] -l ray.io/node-type=head --tail=200
+kubectl logs -n rationai-jobs-ns -l ray.io/node-type=head --tail=200
 ```
 
 ## Troubleshooting
@@ -365,7 +360,7 @@ kubectl logs -n [namespace] -l ray.io/node-type=head --tail=200
 **Check RayService status:**
 
 ```bash
-kubectl describe rayservice rayservice-model -n [namespace]
+kubectl describe rayservice rayservice-model -n rationai-jobs-ns
 ```
 
 **Common issues:**
@@ -381,10 +376,10 @@ kubectl describe rayservice rayservice-model -n [namespace]
 
 ```bash
 # View dashboard
-kubectl port-forward -n [namespace] svc/rayservice-model-head-svc 8265:8265
+kubectl port-forward -n rationai-jobs-ns svc/rayservice-model-head-svc 8265:8265
 
 # Check logs
-kubectl logs -n [namespace] -l ray.io/node-type=worker --tail=100
+kubectl logs -n rationai-jobs-ns -l ray.io/node-type=worker --tail=100
 ```
 
 **Common issues:**
@@ -400,7 +395,7 @@ kubectl logs -n [namespace] -l ray.io/node-type=worker --tail=100
 
 ```bash
 # Ray dashboard: http://localhost:8265
-kubectl port-forward -n [namespace] svc/rayservice-model-head-svc 8265:8265
+kubectl port-forward -n rationai-jobs-ns svc/rayservice-model-head-svc 8265:8265
 ```
 
 **Possible solutions:**

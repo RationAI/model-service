@@ -41,7 +41,7 @@ Model Service is built on top of Ray Serve because it combines a simple develope
 
 Alternative approaches (plain Kubernetes deployments, custom Flask/FastAPI services, or specialized serving stacks like TorchServe or TF Serving) either lack first‑class autoscaling orchestration across many models, or are tightly coupled to specific ML frameworks. Ray Serve, together with KubeRay, lets us:
 
-- Express all infrastructure declaratively in a single `RayService` resource.
+- Express all infrastructure declaratively through Kustomize components.
 - Share the same cluster across heterogeneous models and hardware (CPU/GPU).
 - Keep the operational surface smaller by relying on one general‑purpose serving layer instead of many ad‑hoc microservices.
 
@@ -64,7 +64,7 @@ Model Service is designed for:
 
 - [**Adding Models**](guides/adding-models.md): How to write, package, and integrate your own Python models.
 - [**Deployment Guide**](guides/deployment-guide.md): Production checklist, resource planning (CPU/GPU), and networking.
-- [**Configuration Reference**](guides/configuration-reference.md): Detailed explanation of `ray-service.yaml` settings.
+- [**Configuration Reference**](guides/configuration-reference.md): Detailed explanation of Kustomize configuration settings.
 - [**Troubleshooting**](guides/troubleshooting.md): Common errors (OOM, hang scenarios) and solutions.
 
 ### Architecture Deep Dive

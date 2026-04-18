@@ -8,36 +8,36 @@ If you are new to the project, start here and then follow the links to the deepe
 
 Model Service is built on Kubernetes + KubeRay + Ray Serve:
 
-```
-┌──────────────────────────────────────────────────────────────────┐
-│                           Head Node                              │
-│                                                                  │
-│    ┌──────────────┐                    ┌───────────────────┐     │
-│    │  Controller  │◄───────────────────┤    HTTP Proxy     │◄──── Client Request
-│    │ (Autoscaler) │   Update Config    │     (Ingress)     │     │
-│    └──────┬───────┘                    └─────────┬─────────┘     │
-│           │                                      │               │
-└───────────┼──────────────────────────────────────┼───────────────┘
-            │ Manage                               │ Route
-            ▼                                      ▼
-┌──────────────────────────────────────────────────────────────────┐
-│                         Worker Nodes                             │
-│                                                                  │
-│  ┌────────────────────────────────────────────────────────────┐  │
-│  │                       Application 1                        │  │
-│  │  ┌──────────────────────┐        ┌──────────────────────┐  │  │
-│  │  │     Deployment A     │        │     Deployment B     │  │  │
-│  │  │ ┌────────┐ ┌────────┐│        │ ┌────────┐ ┌────────┐│  │  │
-│  │  │ │Replica │ │Replica ││        │ │Replica │ │Replica ││  │  │
-│  │  │ └────────┘ └────────┘│        │ └────────┘ └────────┘│  │  │
-│  │  └──────────────────────┘        └──────────────────────┘  │  │
-│  └────────────────────────────────────────────────────────────┘  │
-│                                                                  │
-│  ┌────────────────────────────────────────────────────────────┐  │
-│  │                       Application 2                        │  │
-│  │               ...                                          │  │
-│  └────────────────────────────────────────────────────────────┘  │
-└──────────────────────────────────────────────────────────────────┘
+```text
++------------------------------------------------------------------+
+|                           Head Node                              |
+|                                                                  |
+|    +--------------+                    +-------------------+     |
+|    |  Controller  |<-------------------|    HTTP Proxy     |<---- Client Request
+|    | (Autoscaler) |   Update Config    |     (Ingress)     |     |
+|    +------+-------+                    +---------+---------+     |
+|           |                                      |               |
++-----------+--------------------------------------+---------------+
+            | Manage                               | Route
+            v                                      v
++------------------------------------------------------------------+
+|                         Worker Nodes                             |
+|                                                                  |
+|  +------------------------------------------------------------+  |
+|  |                       Application 1                        |  |
+|  |  +----------------------+        +----------------------+  |  |
+|  |  |     Deployment A     |        |     Deployment B     |  |  |
+|  |  | +--------+ +--------+|        | +--------+ +--------+|  |  |
+|  |  | |Replica | |Replica ||        | |Replica | |Replica ||  |  |
+|  |  | +--------+ +--------+|        | +--------+ +--------+|  |  |
+|  |  +----------------------+        +----------------------+  |  |
+|  +------------------------------------------------------------+  |
+|                                                                  |
+|  +------------------------------------------------------------+  |
+|  |                       Application 2                        |  |
+|  |               ...                                          |  |
+|  +------------------------------------------------------------+  |
++------------------------------------------------------------------+
 ```
 
 ## Core Concepts & Hierarchy
@@ -72,15 +72,7 @@ For request lifecycle and queueing details, see [Request Lifecycle](request-life
 
 ### Horizontal Scaling (Replicas)
 
-Models scale horizontally by adding/removing replicas:
-
-```
-Load: ████████░░ (80%)
-Replicas: [R1] [R2] [R3]
-
-Load: ████████████████ (160%)
-Replicas: [R1] [R2] [R3] [R4] [R5] [R6]
-```
+Models scale horizontally by adding/removing replicas.
 
 **Autoscaling Triggers:**
 
@@ -128,7 +120,7 @@ Ray Serve is designed to be resilient to failures:
 
 ## Design Principles
 
-1. **Declarative Configuration**: Infrastructure defined in YAML, managed by GitOps (`RayService` CR).
+1. **Declarative Configuration**: Infrastructure defined in YAML, assembled with Kustomize components.
 2. **Separation of Concerns**: Model Code (Python), Infrastructure (K8s), Configuration (User Config).
 3. **Elastic Scaling**: Scale to zero when idle, scale up on demand.
 4. **Developer Experience**: Simple model implementation, easy local testing.
@@ -138,10 +130,10 @@ Ray Serve is designed to be resilient to failures:
 Common commands:
 
 ```bash
-kubectl get pods -n [namespace]
-kubectl top pods -n [namespace]
-kubectl logs -n [namespace] <pod-name>
-kubectl describe rayservice <rayservice-name> -n [namespace]
+kubectl get pods -n rationai-jobs-ns
+kubectl top pods -n rationai-jobs-ns
+kubectl logs -n rationai-jobs-ns <pod-name>
+kubectl describe rayservice rayservice-model -n rationai-jobs-ns
 ```
 
 Ray can export Prometheus metrics (when metrics collection/export is enabled):
