@@ -21,8 +21,11 @@ def fetch_tissue_tile(
     )
     if not np.asarray(tile.convert("L")).any():
         return None
-
-    tile = slide.read_region_relative((x, y), level, (tile_size, tile_size)).convert(
-        "RGB"
+    tile = slide.read_tile(
+        x=x,
+        y=y,
+        extent_x=tile_size,
+        extent_y=tile_size,
+        level=level,
     )
-    return np.asarray(tile).transpose(2, 0, 1)
+    return tile.transpose(2, 0, 1)
