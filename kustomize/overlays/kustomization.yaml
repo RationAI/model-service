@@ -5,6 +5,5 @@ resources:
   - ../base
 
 components:
-  - ../components/models
-  - ../components/cpu-workers
-  - ../components/gpu-workers
+  - ../components/applications
+  - ../components/workers

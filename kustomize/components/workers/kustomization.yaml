@@ -4,4 +4,7 @@ kind: Component
 patches:
   - target:
       kind: RayService
-    path: gpu-workers-patch.yaml
+    path: cpu-workers-patch.yaml
+  - target:
+      kind: RayService
+    path: mig20-workers-patch.yaml
