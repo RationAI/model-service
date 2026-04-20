@@ -1,0 +1,26 @@
+{{- $base := fromYaml (.Values.baseRayServiceYaml | required "No base RayService YAML provided. Pass it with --set-file baseRayServiceYaml=<path>.") -}}
+
+{{- $workerGroups := list -}}
+{{- range $name := keys (.Values.workerYamls | required "No worker YAMLs provided. Pass them with --set-file workerYamls.<name>=<path>.") | sortAlpha -}}
+{{- $workerGroup := fromYaml (index $.Values.workerYamls $name) -}}
+{{- $workerGroups = append $workerGroups $workerGroup -}}
+{{- end -}}
+
+{{- $appKeys := keys (.Values.applicationDefinitionYamls | required "No application definition YAMLs provided. Pass them with --set-file applicationDefinitionYamls.<name>=<path>.") | sortAlpha -}}
+
+{{- $serveRaw := "applications:\n" -}}
+{{- range $name := $appKeys -}}
+{{- $serveRaw = printf "%s%s\n" $serveRaw (index $.Values.applicationDefinitionYamls $name) -}}
+{{- end -}}
+
+{{- $rayClusterConfig := set (deepCopy $base.spec.rayClusterConfig) "workerGroupSpecs" $workerGroups -}}
+{{- $spec := omit (set (deepCopy $base.spec) "rayClusterConfig" $rayClusterConfig) "serveConfigV2" -}}
+
+apiVersion: {{ $base.apiVersion }}
+kind: {{ $base.kind }}
+metadata:
+{{ toYaml $base.metadata | nindent 2 }}
+spec:
+{{ toYaml $spec | nindent 2 }}
+  serveConfigV2: |
+{{ $serveRaw | indent 4 }}

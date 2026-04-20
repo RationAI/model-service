@@ -1,7 +1,7 @@
 apiVersion: ray.io/v1
 kind: RayService
 metadata:
-  name: rayservice-model
+  name: rayservice-model-test
 spec:
   serveConfigV2: ""
   rayClusterConfig:
