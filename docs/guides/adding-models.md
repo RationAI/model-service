@@ -252,7 +252,7 @@ applications:
     import_path: models.my_onnx_model:app
     route_prefix: /my-model
     runtime_env:
-      working_dir: https://github.com/RationAI/model-service/archive/refs/heads/main.zip
+            working_dir: https://github.com/RationAI/model-service/archive/refs/heads/your-feature-branch.zip
       pip:
         - onnxruntime>=1.23.2
         - numpy
@@ -270,6 +270,22 @@ applications:
 ```
 
 In this repository, model dependencies can be installed under `deployments[*].ray_actor_options.runtime_env.pip` (not only at `applications[*].runtime_env`). This is useful when different deployments need different dependencies.
+
+### Best Practice: Test New Models from Your Own Branch
+
+When adding a new model, create and use your own GitHub branch for testing. This avoids affecting deployments that still depend on `main`.
+
+Example:
+
+- Branch name: `feature/my-new-model`
+- `working_dir`:
+
+```yaml
+runtime_env:
+  working_dir: https://github.com/RationAI/model-service/archive/refs/heads/feature/my-new-model.zip
+```
+
+After validation, merge the branch and switch `working_dir` back to the target shared branch (for example `main`).
 
 ## GPU Models
 

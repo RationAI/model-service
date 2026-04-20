@@ -78,7 +78,7 @@ applications:
     route_prefix: /my-model
 
     runtime_env:
-      working_dir: https://gitlab.ics.muni.cz/rationai/infrastructure/model-service/-/archive/master/model-service-master.zip
+      working_dir: https://github.com/RationAI/model-service/archive/refs/heads/feature/my-new-model.zip
 
     deployments:
       - name: MyModel
@@ -96,6 +96,8 @@ applications:
             pip:
               - fastapi
 ```
+
+For development and testing, prefer a dedicated branch in `working_dir` (for example `feature/my-new-model`) so unfinished changes do not affect other users.
 
 ---
 
