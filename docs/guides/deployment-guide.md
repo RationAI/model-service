@@ -69,7 +69,7 @@ app = MyModel.bind()
 
 ## Step 2: Add your Kustomize YAML definition
 
-Kubernetes requires the resource specification associated with the code. Create a file named `my-model.yaml` within `kustomize/components/models/models-definitions/`:
+Kubernetes requires the resource specification associated with the code. Create a file named `my-model.yaml` within `kustomize/components/applications/applications-definitions/`:
 
 ```yaml
 applications:
@@ -102,6 +102,8 @@ For development and testing, prefer a dedicated branch in `working_dir` (for exa
 ---
 
 ## Step 3: Deploy
+
+<span style="color:#b00020; font-weight:700;">Before test deployment, change <code>metadata.name</code> in <code>kustomize/base/ray-service-base.yaml</code> to a unique test name (for example <code>rayservice-model-my-model</code>).</span>
 
 The configuration relies on Kustomize to inject your deployment components. Deploy it by executing the shell script:
 
@@ -275,10 +277,10 @@ spec:
 
 ## Multi-Model Deployment
 
-Deploy multiple models by adding multiple application definitions to your Kustomize `models-definitions/` directory. Each file will be merged automatically:
+Deploy multiple models by adding multiple application definitions to your Kustomize `applications-definitions/` directory. Each file will be merged automatically:
 
 ```yaml
-# kustomize/components/models/models-definitions/model-a.yaml
+# kustomize/components/applications/applications-definitions/model-a.yaml
 applications:
   - name: model-a
     import_path: models.model_a:app
@@ -288,7 +290,7 @@ applications:
         ray_actor_options:
           num_cpus: 4
 
-# kustomize/components/models/models-definitions/model-b.yaml
+# kustomize/components/applications/applications-definitions/model-b.yaml
 applications:
   - name: model-b
     import_path: models.model_b:app
@@ -310,8 +312,8 @@ applications:
 ### Update Configuration
 
 ```bash
-# Edit configuration in models-definitions/
-vim kustomize/components/models/models-definitions/my-model.yaml
+# Edit configuration in applications-definitions/
+vim kustomize/components/applications/applications-definitions/my-model.yaml
 
 # Apply changes using the deploy script
 ./deploy.sh

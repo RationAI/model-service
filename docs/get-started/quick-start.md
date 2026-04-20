@@ -34,9 +34,9 @@ cd model-service
 
 In Model Service, configurations are managed using **Kustomize**. The environment configuration is split into components inside the `kustomize/` directory.
 
-Models are configured by adding simple YAML definitions into the `kustomize/components/models/models-definitions/` folder.
+Applications are configured by adding simple YAML definitions into the `kustomize/components/applications/applications-definitions/` folder.
 
-Let's look at a sample model definition (e.g. `kustomize/components/models/models-definitions/prostate.yaml`):
+Let's look at a sample application definition (e.g. `kustomize/components/applications/applications-definitions/prostate.yaml`):
 
 ```yaml
 applications:
@@ -58,6 +58,8 @@ For your first deployment, we will use the existing configuration without change
 
 ## Step 3: Deploy the service
 
+<span style="color:#b00020; font-weight:700;">Before test deployment, change <code>metadata.name</code> in <code>kustomize/base/ray-service-base.yaml</code> to a unique test name (for example <code>rayservice-model-my-model</code>).</span>
+
 To deploy the service, use the provided deployment script:
 
 ```bash
@@ -66,9 +68,11 @@ To deploy the service, use the provided deployment script:
 
 This script automates the deployment process:
 
-1. It runs `kustomize/components/models/merge_models.py`, which reads all individual model YAMLs from `models-definitions/` and merges them into a single `serve-config-patch.yaml` file.
+1. It runs `kustomize/components/applications/merge_applications.py`, which reads all individual application YAMLs from `applications-definitions/` and merges them into a single `serve-config-patch.yaml` file.
 2. It builds the Kustomize manifests from `kustomize/overlays`.
 3. It applies the final manifest to the Kubernetes cluster using `kubectl`.
+
+If you changed or added an application definition that points `runtime_env.working_dir` to your branch, commit and push those changes before running `./deploy.sh` so Ray can fetch the updated code snapshot.
 
 ---
 

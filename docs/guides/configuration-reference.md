@@ -6,9 +6,14 @@ For a complete reference of the Ray Service API, you can consult the upstream Ra
 
 ## 1. Anatomy of a Model Service Application
 
-Model Service uses **Kustomize** to manage Kubernetes manifests. Configuration is maintained in the `kustomize/components/models/models-definitions/` directory.
+Model Service uses **Kustomize** to manage Kubernetes manifests.
 
-To define an application, add a YAML file (e.g. `my-model.yaml`) to the `models-definitions` directory:
+The configuration source of truth is split across two places:
+
+- `kustomize/components/applications/applications-definitions/`: Serve application definitions (routes, import paths, deployments, autoscaling, user config).
+- `kustomize/base/ray-service-base.yaml`: RayService base object and cluster-level settings (`rayClusterConfig`).
+
+To define an application, add a YAML file (e.g. `my-model.yaml`) to the `applications-definitions` directory:
 
 ```yaml
 applications:
@@ -17,7 +22,9 @@ applications:
     route_prefix: /my-model
 ```
 
-A python script (`merge_models.py`) combines output from the `models-definitions` directory into a unified `RayService` definition when executed via `./deploy.sh`.
+A python script (`merge_applications.py`) combines all files from `applications-definitions` into `kustomize/components/applications/serve-config-patch.yaml` when executed via `./deploy.sh`.
+
+`serve-config-patch.yaml` is generated, so you should not edit it manually.
 
 This file instructs KubeRay on:
 
@@ -28,7 +35,7 @@ This file instructs KubeRay on:
 
 ## 2. Configuring Application Endpoints
 
-An application is the interface clients use to communicate with your deployment. Let's configure one in the `models-definitions/` directory:
+An application is the interface clients use to communicate with your deployment. Let's configure one in the `applications-definitions/` directory:
 
 ```yaml
 applications:
@@ -36,7 +43,7 @@ applications:
     import_path: models.binary_classifier:app
     route_prefix: /prostate-classifier
     runtime_env:
-      working_dir: https://.../model-service-main.zip
+      working_dir: https://github.com/RationAI/model-service/archive/refs/heads/feature/my-new-model.zip
       pip:
         - onnxruntime>=1.23.2
 ```
@@ -117,7 +124,19 @@ If `target_ongoing_requests` is `20`, and there are `100` incoming concurrent re
 
 ## 3. Configuring the Cluster Resources
 
-Your logic execution requires physical computation allocation on worker `Pods`.
+Cluster-level configuration has moved to `kustomize/base/ray-service-base.yaml`.
+
+<span style="color:#b00020; font-weight:700;">Before test deployment, change <code>metadata.name</code> in <code>kustomize/base/ray-service-base.yaml</code> to a unique test name (for example <code>rayservice-model-my-model</code>).</span>
+
+This includes:
+
+- Ray version and autoscaler options
+- head/worker group templates
+- CPU, memory, security context, and other Pod-level resource settings
+
+Your application/deployment-level settings (for example `autoscaling_config`, `ray_actor_options`, and `user_config`) remain in `applications-definitions/*.yaml`.
+
+Example cluster configuration from `ray-service-base.yaml`:
 
 ```yaml
 rayClusterConfig:
@@ -176,36 +195,37 @@ This just ensures your code runs safely without root access!
 
 ## 5. Putting It Together (Small Example)
 
+In the current setup, you typically edit application definitions and base cluster settings, then run `./deploy.sh`.
+The `serveConfigV2` patch is generated automatically.
+
 ```yaml
+# kustomize/components/applications/applications-definitions/my-classifier.yaml
+applications:
+  - name: my-classifier
+    import_path: models.classifier:app
+    route_prefix: /classify
+    deployments:
+      - name: Classifier
+        autoscaling_config:
+          min_replicas: 1
+          max_replicas: 5
+          target_ongoing_requests: 32
+        ray_actor_options:
+          num_cpus: 4
+```
+
+```yaml
+# kustomize/base/ray-service-base.yaml
 apiVersion: ray.io/v1
 kind: RayService
 metadata:
-  name: rayservice-example
-  namespace: rationai-jobs-ns
+  name: rayservice-model-my-model # CHANGE THIS BEFORE DEPLOYMENT
 spec:
-  serveConfigV2: |
-    applications:
-      - name: my-classifier
-        import_path: models.classifier:app
-        route_prefix: /classify
-        deployments:
-          - name: Classifier
-            autoscaling_config:
-              min_replicas: 1
-              max_replicas: 5
-              target_ongoing_requests: 32
-            ray_actor_options:
-              num_cpus: 4
+  serveConfigV2: "" # Patched by generated serve-config-patch.yaml
   rayClusterConfig:
-    rayVersion: "2.53.0"
+    rayVersion: 2.53.0
     enableInTreeAutoscaling: true
-    headGroupSpec:
-      rayStartParams:
-        num-cpus: "0"
-    workerGroupSpecs:
-      - groupName: cpu-workers
-        minReplicas: 1
-        maxReplicas: 5
+    # ... headGroupSpec / workerGroupSpecs
 ```
 
 ## Next Steps

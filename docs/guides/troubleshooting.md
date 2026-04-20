@@ -6,9 +6,16 @@ This page lists the most common issues when deploying and running models in Mode
 
 Start here before digging deeper:
 
+Use your RayService name from `kustomize/base/ray-service-base.yaml` in the commands below.
+In examples, set it once as:
+
+```bash
+RAYSERVICE_NAME=rayservice-model
+```
+
 ```bash
 kubectl get rayservice -n rationai-jobs-ns
-kubectl describe rayservice rayservice-model -n rationai-jobs-ns
+kubectl describe rayservice $RAYSERVICE_NAME -n rationai-jobs-ns
 kubectl get pods -n rationai-jobs-ns
 ```
 
@@ -30,13 +37,13 @@ Ray Serve could not start the application or deployment. The root cause is typic
 1. Describe the RayService for events:
 
 ```bash
-kubectl describe rayservice rayservice-model -n rationai-jobs-ns
+kubectl describe rayservice $RAYSERVICE_NAME -n rationai-jobs-ns
 ```
 
 2. Open the Ray dashboard (helps with Serve deployment errors):
 
 ```bash
-kubectl port-forward -n rationai-jobs-ns svc/rayservice-model-head-svc 8265:8265
+kubectl port-forward -n rationai-jobs-ns svc/${RAYSERVICE_NAME}-head-svc 8265:8265
 ```
 
 Visit `http://localhost:8265`.
@@ -193,5 +200,5 @@ kubectl get rayservice -n rationai-jobs-ns
 kubectl get svc -n rationai-jobs-ns
 
 # see all pods for a RayService
-kubectl get pods -n rationai-jobs-ns -l ray.io/cluster=rayservice-model
+kubectl get pods -n rationai-jobs-ns -l ray.io/cluster=$RAYSERVICE_NAME
 ```

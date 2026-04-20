@@ -8,7 +8,7 @@ To add a new model, you need to:
 
 1. Create a model class with Ray Serve decorators
 2. Implement the inference logic
-3. Configure the model in `kustomize/components/models/models-definitions/`
+3. Configure the model in `kustomize/components/applications/applications-definitions/`
 4. Deploy and test
 
 ## Model Implementation
@@ -244,7 +244,7 @@ user_config:
 
 ## RayService Configuration
 
-Add your model file to `kustomize/components/models/models-definitions/my-model.yaml`:
+Add your model file to `kustomize/components/applications/applications-definitions/my-model.yaml`:
 
 ```yaml
 applications:
@@ -271,6 +271,8 @@ applications:
 
 In this repository, model dependencies can be installed under `deployments[*].ray_actor_options.runtime_env.pip` (not only at `applications[*].runtime_env`). This is useful when different deployments need different dependencies.
 
+The `deploy.sh` script automatically regenerates `kustomize/components/applications/serve-config-patch.yaml` from all files in `applications-definitions/`. You should not edit `serve-config-patch.yaml` manually.
+
 ### Best Practice: Test New Models from Your Own Branch
 
 When adding a new model, create and use your own GitHub branch for testing. This avoids affecting deployments that still depend on `main`.
@@ -286,6 +288,10 @@ runtime_env:
 ```
 
 After validation, merge the branch and switch `working_dir` back to the target shared branch (for example `main`).
+
+Before running `./deploy.sh`, commit and push your new model code and application-definition YAML to your branch. Ray downloads code from the branch ZIP in `runtime_env.working_dir`, so unpushed local changes will not be deployed.
+
+<span style="color:#b00020; font-weight:700;">Before test deployment, change <code>metadata.name</code> in <code>kustomize/base/ray-service-base.yaml</code> to a unique test name (for example <code>rayservice-model-my-model</code>).</span>
 
 ## GPU Models
 
