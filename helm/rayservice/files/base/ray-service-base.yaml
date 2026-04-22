@@ -1,7 +1,7 @@
 apiVersion: ray.io/v1
 kind: RayService
 metadata:
-  name: rayservice-model-test
+  name: rayservice-model
   namespace: rationai-jobs-ns
 spec:
   serveConfigV2: ""
