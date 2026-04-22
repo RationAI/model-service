@@ -54,12 +54,12 @@ spec:
                 capabilities:
                   drop: ["ALL"]
     workerGroupSpecs:
-{{- range $workerName := .Values.workers.enabled }}
+{{- range $workerName := .Values.workers }}
 {{- $workerContent := printf "workers/%s.yaml" $workerName | $.Files.Get | fromYaml }}
       - {{ toYaml $workerContent | nindent 8 | trim }}
 {{- end }}
   serveConfigV2: |
     applications:
-{{- range $appName := .Values.applications.enabled }}
+{{- range $appName := .Values.applications }}
 {{ printf "applications/%s.yaml" $appName | $.Files.Get | indent 4 }}
 {{- end }}

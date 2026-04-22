@@ -1,11 +1,9 @@
 workers:
-  enabled:
-    - cpu-workers
-    - mig20-workers
+  - cpu-workers
+  - mig20-workers
 
 applications:
-  enabled:
-    - episeg-1
-    - heatmap-builder
-    - prostate-classifier-1
-    - virchow2
+  - episeg-1
+  - heatmap-builder
+  - prostate-classifier-1
+  - virchow2
