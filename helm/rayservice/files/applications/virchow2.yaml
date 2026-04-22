@@ -16,10 +16,10 @@
       ray_actor_options:
         num_cpus: 4
         num_gpus: 1
-        memory: 8589934592 # 8 GiB
+        memory: 8589934592
         runtime_env:
           env_vars:
-            HF_HOME: "/mnt/huggingface_cache"
+            HF_HOME: /mnt/huggingface_cache
       user_config:
         tile_size: 224
         max_batch_size: 512

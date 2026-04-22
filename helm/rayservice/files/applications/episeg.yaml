@@ -13,7 +13,7 @@
         target_ongoing_requests: 4
       ray_actor_options:
         num_cpus: 4
-        memory: 12884901888 # 12 GiB
+        memory: 12884901888
         num_gpus: 1
         runtime_env:
           env_vars:

@@ -1,5 +1,13 @@
-baseRayServiceYaml: ""
+rayServiceBasePath: files/base/ray-service-base.yaml
 
-workerYamls: {}
+workers:
+  enabled:
+    - cpu-workers
+    - mig20-workers
 
-applicationDefinitionYamls: {}
+applications:
+  enabled:
+    - episeg
+    - heatmap
+    - prostate
+    - virchow2

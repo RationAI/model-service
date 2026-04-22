@@ -13,7 +13,7 @@
         target_ongoing_requests: 8
       ray_actor_options:
         num_cpus: 8
-        memory: 12884901888 # 12 GiB
+        memory: 12884901888
       user_config:
         num_threads: 8
         max_concurrent_tasks: 16
