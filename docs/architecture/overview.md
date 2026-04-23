@@ -4,6 +4,12 @@ This section provides a structured overview of Model Service's architecture.
 
 If you are new to the project, start here and then follow the links to the deeper pages.
 
+## Overview
+
+Problem solved: route HTTP inference requests to multiple Ray Serve applications while preserving clean service boundaries and independent scaling.
+
+The diagram below summarizes the head-node control plane and worker-node execution plane used in this project.
+
 ## System Architecture
 
 Model Service is built on Kubernetes + KubeRay + Ray Serve:
@@ -45,6 +51,12 @@ Model Service is built on Kubernetes + KubeRay + Ray Serve:
 The client's request flows through several layers of the system:
 
 HTTP Proxy → Head Node → Worker Node → Application → Deployment → Replica.
+
+Why this layering:
+
+- Keep routing and control concerns in the head node.
+- Keep model execution isolated in worker replicas.
+- Allow multiple models (CPU/GPU) to coexist under one gateway.
 
 The main components are:
 
@@ -120,7 +132,7 @@ Ray Serve is designed to be resilient to failures:
 
 ## Design Principles
 
-1. **Declarative Configuration**: Infrastructure defined in YAML, assembled with Kustomize components.
+1. **Declarative Configuration**: Infrastructure defined in YAML, assembled with Helm.
 2. **Separation of Concerns**: Model Code (Python), Infrastructure (K8s), Configuration (User Config).
 3. **Elastic Scaling**: Scale to zero when idle, scale up on demand.
 4. **Developer Experience**: Simple model implementation, easy local testing.

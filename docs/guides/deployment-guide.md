@@ -5,7 +5,7 @@ In this guide, you will transition a locally tested model to a production enviro
 You will learn:
 
 - How to structure your Python code for scalable processing using Ray Serve.
-- How to configure a Kustomize application definition for your model.
+- How to configure a Helm release for your model.
 - How to identify and avoid common resource allocation pitfalls.
 
 ## Prerequisites
@@ -47,7 +47,7 @@ class MyModel:
         return object()
 
     def reconfigure(self, config: Config):
-        # Ray automatically triggers this when you update the YAML configuration
+        # Ray automatically triggers this when you update the YAML configuration via Helm
         self.threshold = config.get("threshold", 0.5)
 
     @app_ingress.post("/")
@@ -61,57 +61,56 @@ app = MyModel.bind()
 
 ### Note: Why use `__init__` and `reconfigure`?
 
-- **`__init__`**: Executes once when the replica initializes. Ideal for static components like loading neural network weights into memory.
-- **`reconfigure`**: Executes automatically when the application receives dynamic configuration updates via Kustomize or the cluster management API.
+- **`__init__`**: Executes once when the replica initializes. Ideal for static components like loading neural network weights into memory. For performance and hardware compatibility, it is recommended to format your weights as an ONNX model (see [Model Export](https://youtrack.rationai.cloud.e-infra.cz/articles/DEV-A-15/Model-Export)).
+- **`reconfigure`**: Executes automatically when the application receives dynamic configuration updates via Helm or the cluster management API.
 - **`FastAPI` Route (`@app_ingress.post`)**: Binds an external HTTP endpoint to accept standard JSON formatting directly.
 
 ---
 
-## Step 2: Add your Kustomize YAML definition
+## Step 2: Add your Helm YAML definition
 
-Kubernetes requires the resource specification associated with the code. Create a file named `my-model.yaml` within `kustomize/components/applications/applications-definitions/`:
+Kubernetes requires the resource specification associated with the code. Create a file named `my-model.yaml` within `helm/rayservice/applications/`:
 
 ```yaml
-applications:
-  - name: my-model
-    import_path: models.my_model:app
-    route_prefix: /my-model
+- name: my-model
+  import_path: models.my_model:app
+  route_prefix: /my-model
 
-    runtime_env:
-      working_dir: https://github.com/RationAI/model-service/archive/refs/heads/feature/my-new-model.zip
+  runtime_env:
+    working_dir: https://github.com/RationAI/model-service/archive/refs/heads/feature/my-new-model.zip
 
-    deployments:
-      - name: MyModel
-        max_ongoing_requests: 32
-        max_queued_requests: 64
+  deployments:
+    - name: MyModel
+      max_ongoing_requests: 32
+      max_queued_requests: 64
 
-        autoscaling_config:
-          min_replicas: 0
-          max_replicas: 4
-          target_ongoing_requests: 16
+      autoscaling_config:
+        min_replicas: 0
+        max_replicas: 4
+        target_ongoing_requests: 16
 
-        ray_actor_options:
-          num_cpus: 2
-          runtime_env:
-            pip:
-              - fastapi
+      ray_actor_options:
+        num_cpus: 2
+        runtime_env:
+          pip:
+            - fastapi
 ```
 
-For development and testing, prefer a dedicated branch in `working_dir` (for example `feature/my-new-model`) so unfinished changes do not affect other users.
+For development and testing, prefer a dedicated branch in `working_dir` (for example `feature/my-new-model`) so unfinished changes do not affect other users. **Tip:** Append a query string to the working directory URL (e.g. `?v=1`) between testing updates to invalidate Ray's caching and force it to pick up your latest code, see [Troubleshooting section](troubleshooting.md).
 
 ---
 
 ## Step 3: Deploy
 
-<span style="color:#b00020; font-weight:700;">Before test deployment, change <code>metadata.name</code> in <code>kustomize/base/ray-service-base.yaml</code> to a unique test name (for example <code>rayservice-model-my-model</code>).</span>
-
-The configuration relies on Kustomize to inject your deployment components. Deploy it by executing the shell script:
+The configuration is rendered by Helm. Deploy it with:
 
 ```bash
-./deploy.sh
+helm upgrade --install rayservice-model helm/rayservice -n rationai-jobs-ns
 ```
 
-This compiles your definitions and provisions the deployment on the target cluster namespace.
+In this command, `rayservice-model` is the Helm release name parameter. Change it to your desired release name (for example `rayservice-model-my-model`) when running isolated test deployments.
+
+This renders the templates and provisions the deployment on the target cluster namespace.
 
 ---
 
@@ -277,28 +276,26 @@ spec:
 
 ## Multi-Model Deployment
 
-Deploy multiple models by adding multiple application definitions to your Kustomize `applications-definitions/` directory. Each file will be merged automatically:
+Deploy multiple models by adding multiple application definitions to `helm/rayservice/applications/`. Helm renders all application files into one `serveConfigV2` during deployment:
 
 ```yaml
-# kustomize/components/applications/applications-definitions/model-a.yaml
-applications:
-  - name: model-a
-    import_path: models.model_a:app
-    route_prefix: /model-a
-    deployments:
-      - name: ModelA
-        ray_actor_options:
-          num_cpus: 4
+# helm/rayservice/applications/model-a.yaml
+- name: model-a
+  import_path: models.model_a:app
+  route_prefix: /model-a
+  deployments:
+    - name: ModelA
+      ray_actor_options:
+        num_cpus: 4
 
-# kustomize/components/applications/applications-definitions/model-b.yaml
-applications:
-  - name: model-b
-    import_path: models.model_b:app
-    route_prefix: /model-b
-    deployments:
-      - name: ModelB
-        ray_actor_options:
-          num_gpus: 1
+# helm/rayservice/applications/model-b.yaml
+- name: model-b
+  import_path: models.model_b:app
+  route_prefix: /model-b
+  deployments:
+    - name: ModelB
+      ray_actor_options:
+        num_gpus: 1
 ```
 
 ## Updating Deployments
@@ -307,16 +304,22 @@ applications:
 
 1. Update code in the repository.
 2. Commit and push your changes.
-3. KubeRay will automatically fetch the new code from the `working_dir` URL on the next deployment.
+3. Redeploy with Helm:
+
+```bash
+helm upgrade --install rayservice-model helm/rayservice -n rationai-jobs-ns
+```
+
+4. If `runtime_env.working_dir` URL is unchanged and old code is still used, bump a cache-busting query parameter (for example `...?v=2`) and redeploy.
 
 ### Update Configuration
 
 ```bash
-# Edit configuration in applications-definitions/
-vim kustomize/components/applications/applications-definitions/my-model.yaml
+# Edit application configuration
+vim helm/rayservice/applications/my-model.yaml
 
-# Apply changes using the deploy script
-./deploy.sh
+# Apply changes with Helm
+helm upgrade --install rayservice-model helm/rayservice -n rationai-jobs-ns
 ```
 
 KubeRay will reconcile the RayService and attempt a rolling-style update:
@@ -338,7 +341,7 @@ user_config:
 Apply the update:
 
 ```bash
-./deploy.sh
+helm upgrade --install rayservice-model helm/rayservice -n rationai-jobs-ns
 ```
 
 ## Rollback

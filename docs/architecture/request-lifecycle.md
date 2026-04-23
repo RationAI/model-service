@@ -6,6 +6,10 @@ It also highlights **where requests queue** and which settings control queueing 
 
 ## High-Level Flow
 
+Overview: one ingress can expose multiple model routes, each backed by its own Serve application and deployment policy.
+
+![Endpoint routing to model applications](<../images/endpoint-routing%20(2).png>)
+
 ```text
 +--------------------------------------------------------------------+
 |                           External Client                           |

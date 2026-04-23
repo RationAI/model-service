@@ -5,7 +5,7 @@ In this tutorial, you will deploy your first model to a Kubernetes cluster.
 You will learn:
 
 - How to get the project code.
-- How to review and apply the Kustomize configuration.
+- How to review and apply the Helm configuration.
 - How to verify the deployment status.
 - How to send requests to your running model.
 
@@ -32,18 +32,17 @@ cd model-service
 
 ## Step 2: Review the Configuration
 
-In Model Service, configurations are managed using **Kustomize**. The environment configuration is split into components inside the `kustomize/` directory.
+In Model Service, configurations are managed using **Helm**. The environment configuration is split into values and applications inside the `helm/rayservice/` directory.
 
-Applications are configured by adding simple YAML definitions into the `kustomize/components/applications/applications-definitions/` folder.
+Applications are configured by adding simple YAML definitions into the `helm/rayservice/applications/` folder.
 
-Let's look at a sample application definition (e.g. `kustomize/components/applications/applications-definitions/prostate.yaml`):
+Let's look at a sample application definition (e.g. `helm/rayservice/applications/prostate-classifier-1.yaml`):
 
 ```yaml
-applications:
-  - name: prostate-classifier-1
-    import_path: models.binary_classifier:app
-    route_prefix: /prostate-classifier-1
-    # ...
+- name: prostate-classifier-1
+  import_path: models.binary_classifier:app
+  route_prefix: /prostate-classifier-1
+  # ...
 ```
 
 **Let's break down the application config:**
@@ -58,21 +57,19 @@ For your first deployment, we will use the existing configuration without change
 
 ## Step 3: Deploy the service
 
-<span style="color:#b00020; font-weight:700;">Before test deployment, change <code>metadata.name</code> in <code>kustomize/base/ray-service-base.yaml</code> to a unique test name (for example <code>rayservice-model-my-model</code>).</span>
-
-To deploy the service, use the provided deployment script:
+To deploy the service, run Helm:
 
 ```bash
-./deploy.sh
+helm upgrade --install rayservice-model helm/rayservice -n rationai-jobs-ns
 ```
 
-This script automates the deployment process:
+In this command, `rayservice-model` is the Helm release name parameter. Change it to your own release name (for example `rayservice-model-my-model`) to run parallel test deployments.
 
-1. It runs `kustomize/components/applications/merge_applications.py`, which reads all individual application YAMLs from `applications-definitions/` and merges them into a single `serve-config-patch.yaml` file.
-2. It builds the Kustomize manifests from `kustomize/overlays`.
-3. It applies the final manifest to the Kubernetes cluster using `kubectl`.
+This command automates the deployment process by compiling your Helm templates and applying the final manifest to the Kubernetes cluster.
 
-If you changed or added an application definition that points `runtime_env.working_dir` to your branch, commit and push those changes before running `./deploy.sh` so Ray can fetch the updated code snapshot.
+If you changed or added an application definition that points `runtime_env.working_dir` to your branch, commit and push those changes before running Helm so Ray can fetch the updated code snapshot.
+
+**Tip for avoiding cache issues:** Ray caches the downloaded `working_dir` based on the URL string. If you push new code to the same branch/zip URL, Ray will use the old cached version. A great way to bypass this and force a refresh is to add a query parameter to the `working_dir` URL in your config, like `?v=1`, `?v=2`, etc. You can just do this locally before deploying; it doesn't even need to be pushed to the remote repo.
 
 ---
 
@@ -127,7 +124,7 @@ You can now send HTTP requests to `http://localhost:8000/prostate-classifier-1`.
 When you are finished, delete the deployment to free up cluster resources:
 
 ```bash
-kubectl delete -f kustomize/base/ray-service-base.yaml -n rationai-jobs-ns
+helm uninstall rayservice-model -n rationai-jobs-ns
 ```
 
 ---

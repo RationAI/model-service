@@ -6,7 +6,7 @@ This page lists the most common issues when deploying and running models in Mode
 
 Start here before digging deeper:
 
-Use your RayService name from `kustomize/base/ray-service-base.yaml` in the commands below.
+Use your RayService name from the Helm install (e.g. `rayservice-model`) in the commands below.
 In examples, set it once as:
 
 ```bash
@@ -108,7 +108,7 @@ You must increase **both** the Ray logical allocation and the Kubernetes physica
    ```
 
 2. Increase Kubernetes container limits (Hardware limit):
-   Ensure the `workerGroupSpecs` in your base Kustomize configuration (`kustomize/base/` or component patches) provides **more** memory than the sum of all actors on that node plus overhead (~30%).
+   Ensure the worker configurations in your Helm values (`helm/rayservice/values.yaml` or relevant worker definitions) provide **more** memory than the sum of all actors on that node plus overhead (~30%).
 
    ```yaml
    resources:
@@ -183,7 +183,7 @@ kubectl describe pod <pod-name> -n rationai-jobs-ns
 - Ensure the cluster has network access (proxy settings if needed).
 - Verify the `artifact_uri` exists and permissions are correct.
 
-In your model's Kustomize YAML definition this is typically configured via `env_vars`:
+In your model's Helm YAML definition this is typically configured via `env_vars`:
 
 ```yaml
 ray_actor_options:
@@ -191,6 +191,24 @@ ray_actor_options:
     env_vars:
       MLFLOW_TRACKING_URI: http://mlflow.rationai-mlflow:5000
 ```
+
+## Code Updates Not Applying (Working Dir Cache)
+
+### Symptoms
+- You updated your model Python code, pushed it to GitHub, and ran `helm upgrade`, but Ray keeps employing the old logic or throws errors that were already fixed.
+
+### Cause
+Ray downloads the source code defined in `working_dir`: `https://github.com/.../main.zip` and saves it strictly based on the URL string constraint. If the URL hasn't changed, Ray Serve will NOT re-download the archive, effectively clinging to an old snapshot. 
+
+### Fix
+Append a cache buster query parameter directly to your `working_dir` setup:
+```yaml
+runtime_env:
+  config:
+    setup_timeout_seconds: 1800
+  working_dir: https://github.com/RationAI/model-service/archive/refs/heads/main.zip?v=1
+```
+Whenever you push subsequent revisions, just manually bump the `v=1` to `v=2`. During the next Helm deployment process, Ray evaluates the URL as new, retrieves the fresh code zip, and deploys successfully.
 
 ## Helpful Commands
 

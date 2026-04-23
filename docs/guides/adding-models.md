@@ -6,10 +6,11 @@ This guide explains how to integrate your own machine learning models into Model
 
 To add a new model, you need to:
 
-1. Create a model class with Ray Serve decorators
-2. Implement the inference logic
-3. Configure the model in `kustomize/components/applications/applications-definitions/`
-4. Deploy and test
+1. Prepare your model in ONNX format for better inference performance ([Model Export Guide](https://youtrack.rationai.cloud.e-infra.cz/articles/DEV-A-15/Model-Export))
+2. Create a model class with Ray Serve decorators
+3. Implement the inference logic
+4. Configure the model in `helm/rayservice/applications/`
+5. Deploy and test
 
 ## Model Implementation
 
@@ -125,12 +126,13 @@ class ConfigurableModel:
         print(f"Reconfigured: threshold={self.threshold}")
 ```
 
-Update config via your model definition YAML:
+Update config via your model definition YAML (in `helm/rayservice/applications/`):
 
 ```yaml
-user_config:
-  threshold: 0.5
-  batch_size: 32
+- name: configurable-model
+  user_config:
+    threshold: 0.5
+    batch_size: 32
 ```
 
 ### Batching Requests
@@ -244,34 +246,33 @@ user_config:
 
 ## RayService Configuration
 
-Add your model file to `kustomize/components/applications/applications-definitions/my-model.yaml`:
+Add your model file to `helm/rayservice/applications/my-model.yaml`:
 
 ```yaml
-applications:
-  - name: my-model
+- name: my-model
     import_path: models.my_onnx_model:app
     route_prefix: /my-model
     runtime_env:
-            working_dir: https://github.com/RationAI/model-service/archive/refs/heads/your-feature-branch.zip
-      pip:
-        - onnxruntime>=1.23.2
-        - numpy
+        working_dir: https://github.com/RationAI/model-service/archive/refs/heads/your-feature-branch.zip
+        pip:
+            - onnxruntime>=1.23.2
+            - numpy
     deployments:
-      - name: MyONNXModel
-        autoscaling_config:
-          min_replicas: 1
-          max_replicas: 4
-        ray_actor_options:
-          num_cpus: 2
-          memory: 4294967296 # 4 GiB
-          runtime_env:
-            pip:
-              - onnxruntime>=1.23.2
+        - name: MyONNXModel
+            autoscaling_config:
+                min_replicas: 1
+                max_replicas: 4
+            ray_actor_options:
+                num_cpus: 2
+                memory: 4294967296 # 4 GiB
+                runtime_env:
+                    pip:
+                        - onnxruntime>=1.23.2
 ```
 
-In this repository, model dependencies can be installed under `deployments[*].ray_actor_options.runtime_env.pip` (not only at `applications[*].runtime_env`). This is useful when different deployments need different dependencies.
+In this repository, model dependencies can be installed under `deployments[*].ray_actor_options.runtime_env.pip` (not only at `runtime_env.pip` at application level). This is useful when different deployments need different dependencies.
 
-The `deploy.sh` script automatically regenerates `kustomize/components/applications/serve-config-patch.yaml` from all files in `applications-definitions/`. You should not edit `serve-config-patch.yaml` manually.
+Helm automatically renders all files from `helm/rayservice/applications/` into `serveConfigV2` via `helm/rayservice/templates/rayservice.yaml`.
 
 ### Best Practice: Test New Models from Your Own Branch
 
@@ -289,9 +290,9 @@ runtime_env:
 
 After validation, merge the branch and switch `working_dir` back to the target shared branch (for example `main`).
 
-Before running `./deploy.sh`, commit and push your new model code and application-definition YAML to your branch. Ray downloads code from the branch ZIP in `runtime_env.working_dir`, so unpushed local changes will not be deployed.
+Before running Helm, commit and push your new model code and application YAML to your branch. Ray downloads code from the branch ZIP in `runtime_env.working_dir`, so unpushed local changes will not be deployed.
 
-<span style="color:#b00020; font-weight:700;">Before test deployment, change <code>metadata.name</code> in <code>kustomize/base/ray-service-base.yaml</code> to a unique test name (for example <code>rayservice-model-my-model</code>).</span>
+If Ray keeps using older code after a deploy, append a cache-busting query parameter to `working_dir` (for example `.../main.zip?v=2`) and deploy again.
 
 ## GPU Models
 
@@ -319,15 +320,17 @@ class GPUModel:
         return {"prediction": output.cpu().numpy().tolist()}
 ```
 
-Ensure your deployment specifies `num_gpus` greater than `0`. Model Service natively provides a **GPU workers** configuration. The Kustomize build step handles assigning `nvidia.com/gpu` automatically when the `gpu-workers` component is included in `kustomize/overlays/kustomization.yaml`.
+Ensure your deployment specifies `num_gpus` greater than `0`. Model Service provides GPU worker definitions under `helm/rayservice/workers/`.
 
 ## Deployment
 
 Deploy your model:
 
 ```bash
-./deploy.sh
+helm upgrade --install rayservice-model helm/rayservice -n rationai-jobs-ns
 ```
+
+In this command, `rayservice-model` is the Helm release name parameter. Change it if you want a different release name.
 
 Monitor deployment:
 
