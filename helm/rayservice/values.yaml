@@ -7,4 +7,6 @@ applications:
   - heatmap-builder
   - prostate-classifier-1
   - prov-gigapath
+  - stain_normalization
   - virchow2
+  - wsi_normalizer

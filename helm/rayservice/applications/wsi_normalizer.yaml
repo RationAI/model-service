@@ -1,0 +1,19 @@
+- name: wsi-normalizer
+  import_path: builders.wsi_normalizer:app
+  route_prefix: /wsi-normalizer
+  runtime_env:
+    working_dir: https://github.com/RationAI/model-service/archive/refs/heads/feat/stain-normalization-deploy.zip?v=1
+  deployments:
+    - name: WSINormalizer
+      max_ongoing_requests: 1
+      max_queued_requests: 32
+      autoscaling_config:
+        min_replicas: 0
+        max_replicas: 5
+        target_ongoing_requests: 1
+      ray_actor_options:
+        num_cpus: 8
+        memory: 17179869184 # 16 GiB 
+      user_config:
+        num_threads: 16
+        max_concurrent_tasks: 32
