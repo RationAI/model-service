@@ -11,7 +11,7 @@ template:
         type: RuntimeDefault
     containers:
       - name: ray-worker
-        image: cerit.io/rationai/model-service:2.53.0
+        image: cerit.io/rationai/model-service:2.54.0
         imagePullPolicy: Always
         resources:
           limits:
