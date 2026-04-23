@@ -6,4 +6,6 @@ applications:
   - episeg-1
   - heatmap-builder
   - prostate-classifier-1
+  - stain_normalization
   - virchow2
+  - wsi_normalizer
