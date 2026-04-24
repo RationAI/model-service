@@ -67,6 +67,8 @@ class StainNormalization:
             "trt_profile_min_shapes": min_shape,
             "trt_profile_max_shapes": max_shape,
             "trt_profile_opt_shapes": opt_shape,
+            "trt_detailed_build_log": True,   # <- add this
+
         }
 
         sess_options = ort.SessionOptions()
