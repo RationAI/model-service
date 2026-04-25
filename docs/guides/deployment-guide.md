@@ -133,7 +133,7 @@ Kubernetes requires the resource specification associated with the code. Create 
 
 For development and testing, prefer a dedicated branch in `working_dir` (for example `feature/my-new-model`) so unfinished changes do not affect other users.
 
-**Tip:** Append a query string to the working directory URL (e.g. `?v=1`) between testing updates to invalidate Ray's caching and force it to pick up your latest code, see [Troubleshooting section](troubleshooting.md).
+**Tip:** Append a query string to the working directory URL (e.g. `?v=1`) between testing updates to invalidate Ray's caching and force it to pick up your latest code.
 
 ---
 

@@ -44,27 +44,24 @@ app = MyModel.bind()
 
 The repository's reference model `BinaryClassifier` uses FastAPI ingress + batched inference and expects a **compressed binary payload** (not JSON). For simple JSON models, the examples above are fine; for high-throughput image inference, consider the batching and ingress patterns shown below.
 
-### Key Components
+## Key Components
 
-#### 1. Deployment Decorator
+### 1. Deployment Decorator
 
 The `@serve.deployment` decorator marks your class as a Ray Serve deployment:
 
 ```python
-@serve.deployment(
-    ray_actor_options={
-        "num_cpus": 2,           # CPUs per replica
-        "num_gpus": 0,           # GPUs per replica
-        "memory": 2 * 1024**3,   # Memory in bytes
-    }
-)
+@serve.deployment(num_replicas="auto")
+@serve.ingress(fastapi)
 class MyModel:
+    # Ray Serve manages the actor lifecycle and scaling
+    # FastAPI handles the HTTP interface and request routing
     ...
 ```
 
-#### 2. Initialization
+### 2. Initialization
 
-Load your model in `__init__`. This method corresponds to the replica **startup phase**.
+Load your model in `__init__`. This method corresponds to the replica startup phase.
 
 ```python
 def __init__(self):
@@ -77,36 +74,69 @@ def __init__(self):
     print("Model loaded successfully")
 ```
 
-#### 3. Resource Packing (Fractional CPUs/GPUs)
+Lifecycle Notes
 
-Ray allows fractional resource requests. This lets you pack multiple small replicas onto a single node.
+`__init__` (Startup Phase)
+Used for lightweight setup, such as detecting the compute device (CUDA vs. CPU).
+This allows replicas to register with the controller quickly.
+
+**reconfigure** (Runtime Phase)
+Called automatically during startup and whenever user_config changes (e.g., via Helm).
+Handles heavier tasks like downloading model weights and initializing models.
+
+### 3. Micro-batching (@serve.batch)
+
+To maximize GPU utilization, the service uses the `@serve.batch` decorator. Ray Serve buffers individual HTTP requests and passes them to the prediction method as a list. This allows the model to perform vectorized inference on batches, significantly increasing throughput.
 
 ```python
-# Run 4 replicas on a single 1-CPU node (0.25 * 4 = 1.0)
-@serve.deployment(ray_actor_options={"num_cpus": 0.25})
+@serve.batch
+async def predict(self, inputs: list[torch.Tensor]) -> list[torch.Tensor]:
+    tensors = torch.stack(inputs).to(self.device)
+
+    dtype = torch.float16 if self.device.type == "cuda" else torch.bfloat16
+
+    with torch.inference_mode(), torch.autocast(device_type=self.device.type, dtype=dtype):
+        output = self.model(tensors)
+
+    return list(output)
 ```
 
-#### 4. Inference Method
+### 4. High-Performance Request Handling
 
-To handle requests, implement routes using the `@app_ingress.post` pattern (for FastAPI) instead of the standard `__call__` method.
+The root endpoint is optimized for high-throughput binary workloads (e.g., pathology imaging):
+
+**Offloaded Decompression**
+LZ4 decompression runs in a separate thread using asyncio.to_thread, keeping the event loop responsive.
+
+**Header-Driven Logic**
+Clients use custom headers such as x-pool-tokens or x-output-dtype to control post-processing and output precision.
+
+**Compressed Egress**
+Outputs are compressed using LZ4, and metadata such as tensor shape is passed via headers.
 
 ```python
-@app_ingress.post("/")
-async def predict(self, request: Request):
-    data = await request.json()
-    input_data = self.preprocess(data["input"])
+@fastapi.post("/")
+async def root(self, request: Request) -> Response:
+    # 1. Async decompression of request body
+    data = await asyncio.to_thread(lz4.frame.decompress, await request.body())
 
-    with torch.no_grad():
-        output = self.model(input_data)
+    # 2. Preprocessing and batch inference
+    tensor = self.transforms(Image.fromarray(image_np))
+    raw_output: torch.Tensor = await self.predict(tensor)
 
-    return {"prediction": self.postprocess(output)}
+    # 3. Serialize and compress response
+    return Response(
+        content=lz4.frame.compress(result.tobytes()),
+        headers={"x-output-shape": str(result.shape)},
+        media_type="application/octet-stream"
+    )
 ```
 
-## Advanced Features
+### Advanced Features
 
-### Dynamic Configuration
+#### Dynamic Configuration
 
-Use `reconfigure()` to update model settings without redeployment:
+Use **reconfigure()** to update model settings without redeployment:
 
 ```python
 from typing import TypedDict
@@ -126,7 +156,7 @@ class ConfigurableModel:
         print(f"Reconfigured: threshold={self.threshold}")
 ```
 
-Update config via your model definition YAML (in `helm/rayservice/applications/`):
+Update configuration via your model definition YAML:
 
 ```yaml
 - name: configurable-model
@@ -135,9 +165,9 @@ Update config via your model definition YAML (in `helm/rayservice/applications/`
     batch_size: 32
 ```
 
-### Batching Requests
+#### Batching Requests
 
-Use `@serve.batch` for efficient batch processing:
+Example using @serve.batch with JSON input:
 
 ```python
 app_ingress = FastAPI()
@@ -162,14 +192,14 @@ class BatchedModel:
         return {"prediction": result}
 ```
 
-For binary/image workloads, you can also batch raw `bytes` like the `BinaryClassifier` does (see `models/binary_classifier.py`). This avoids JSON overhead and lets you control batch sizing via `user_config` by calling `set_max_batch_size()` and `set_batch_wait_timeout_s()`.
+For binary/image workloads, you can also batch raw bytes (as in BinaryClassifier). This avoids JSON overhead and allows dynamic batch control via user_config.
 
-### Using FastAPI
+#### Using FastAPI
 
-For advanced HTTP features, use FastAPI:
+For advanced HTTP features, integrate FastAPI:
 
 ```python
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from pydantic import BaseModel
 
 class PredictionRequest(BaseModel):
