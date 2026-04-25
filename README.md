@@ -4,7 +4,8 @@ Model deployment infrastructure for RationAI using Ray Serve on Kubernetes.
 
 This repository contains:
 
-- A KubeRay `RayService` manifest (`ray-service.yaml`) for deploying Ray Serve on Kubernetes.
+- A Helm chart (`helm/rayservice/`) that renders and deploys a KubeRay `RayService`.
+- A static RayService manifest (`ray-service.yaml`) for reference/manual apply workflows.
 - Model implementations under `models/` (reference: `models/binary_classifier.py`).
 - Documentation under `docs/` (MkDocs).
 
@@ -30,23 +31,24 @@ Full walkthrough: `docs/get-started/quick-start.md`.
 
 - Kubernetes cluster with KubeRay operator installed
 - `kubectl` configured for the cluster
+- `helm` installed locally
 
 ### Deploy
 
 ```bash
-kubectl apply -f ray-service.yaml -n [namespace]
-kubectl get rayservice rayservice-models -n [namespace]
+helm upgrade --install rayservice-model helm/rayservice -n [namespace]
+kubectl get rayservice rayservice-model -n [namespace]
 ```
 
 ### Access locally
 
 ```bash
-kubectl port-forward -n [namespace] svc/rayservice-models-serve-svc 8000:8000
+kubectl port-forward -n [namespace] svc/rayservice-model-serve-svc 8000:8000
 ```
 
 ### Test the reference model (`BinaryClassifier`)
 
-The reference deployment in `ray-service.yaml` exposes an app at the route prefix:
+The reference deployment in `helm/rayservice/applications/prostate-classifier-1.yaml` exposes an app at the route prefix:
 
 - `/prostate-classifier-1`
 
@@ -73,27 +75,13 @@ tile = np.zeros((tile_size, tile_size, 3), dtype=np.uint8)
 payload = lz4.frame.compress(tile.tobytes())
 
 resp = requests.post(
-		"http://localhost:8000/prostate-classifier-1/",
-		data=payload,
-		headers={"Content-Type": "application/octet-stream"},
-		timeout=60,
+  "http://localhost:8000/prostate-classifier-1/",
+  data=payload,
+  headers={"Content-Type": "application/octet-stream"},
+  timeout=60,
 )
 resp.raise_for_status()
 print(resp.json() if resp.headers.get("content-type", "").startswith("application/json") else resp.text)
-```
-
-## Repository Structure
-
-```
-model-service/
-├── models/              # Model implementations
-│   └── binary_classifier.py
-├── providers/           # Model loading providers
-│   └── model_provider.py
-├── docs/               # Documentation
-├── ray-service.yaml    # Kubernetes RayService configuration
-├── pyproject.toml      # Python dependencies
-└── README.md
 ```
 
 ## Support

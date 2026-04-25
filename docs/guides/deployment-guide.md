@@ -29,7 +29,7 @@ import asyncio
 from typing import TypedDict
 
 import numpy as np
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Request
 from numpy.typing import NDArray
 from ray import serve
 
@@ -74,10 +74,10 @@ class MyModel:
         # return outputs[0].flatten().tolist()
 
         # Mock prediction returning a list of floats
-        return [float(img.mean() / 255.0) for img in images]
+        return (batch.mean(axis=(1, 2, 3)) / 255.0).tolist()
 
     @fastapi.post("/")
-    async def root(self, request: Request) -> Response:
+      async def root(self, request: Request) -> list[float]:
         # Receive and decompress LZ4 payload
         data = await asyncio.to_thread(self.lz4.decompress, await request.body())
 
@@ -89,7 +89,7 @@ class MyModel:
         )
 
         result = await self.predict(image)
-        return Response(content=str(result), media_type="application/json")
+        return result
 
 app = MyModel.bind()
 ```
@@ -343,7 +343,7 @@ autoscaling_config:
 3.  **`downscale_delay_s`**:
     - Keep this high (e.g., `600s`) to avoid "thrashing". It is cheaper to keep an idle replica for 10 minutes than to re-initialize a heavy model (loading weights, etc.) every time traffic dips for a minute.
 
-For the exact formulas and definitions of these settings, see the [Configuration Reference](configuration-reference.md#22-autoscaling-strategies).
+For the exact formulas and definitions of these settings, see the [Configuration Reference](configuration-reference.md#autoscaling-strategies).
 
 ### High Availability
 

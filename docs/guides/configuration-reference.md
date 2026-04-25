@@ -66,6 +66,25 @@ autoscaling_config:
   target_ongoing_requests: 32
 ```
 
+### Autoscaling Strategies
+
+In addition to `min_replicas`, `max_replicas`, and `target_ongoing_requests`, Ray Serve supports stabilization knobs:
+
+```yaml
+autoscaling_config:
+  min_replicas: 1
+  max_replicas: 10
+  target_ongoing_requests: 20
+  upscale_delay_s: 30
+  downscale_delay_s: 600
+```
+
+Practical guidance:
+
+- Lower `target_ongoing_requests` for latency-sensitive or compute-heavy models.
+- Keep `upscale_delay_s` relatively low to react faster to spikes.
+- Keep `downscale_delay_s` higher to avoid frequent scale up/down oscillation.
+
 ## 4. Cluster and Worker Resources
 
 Worker groups are defined under `helm/rayservice/workers/` and referenced by chart values.
