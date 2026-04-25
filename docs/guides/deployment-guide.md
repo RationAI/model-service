@@ -25,36 +25,71 @@ Model Service requires an entrypoint properly decorated for Ray Serve. Create a 
 
 ```python
 # models/my_model.py
+import asyncio
 from typing import TypedDict
-from fastapi import FastAPI, Request
+
+import numpy as np
+from fastapi import FastAPI, Request, Response
+from numpy.typing import NDArray
 from ray import serve
 
-class Config(TypedDict):
-    threshold: float
+fastapi = FastAPI()
 
-app_ingress = FastAPI()
+
+class Config(TypedDict):
+    tile_size: int
+    max_batch_size: int
+    batch_wait_timeout_s: float
+
 
 @serve.deployment(num_replicas="auto")
-@serve.ingress(app_ingress)
+@serve.ingress(fastapi)
 class MyModel:
-    def __init__(self):
-        # Initialize heavy dependencies or weights once per replica
-        self.model = self.load_model_once()
-        self.threshold = 0.5
+    """Sample binary classifier example for tissue tiles."""
 
-    def load_model_once(self):
-        # Initialization logic
-        return object()
+    tile_size: int
 
-    def reconfigure(self, config: Config):
-        # Ray automatically triggers this when you update the YAML configuration via Helm
-        self.threshold = config.get("threshold", 0.5)
+    def __init__(self) -> None:
+        import lz4.frame
 
-    @app_ingress.post("/")
-    async def predict(self, request: Request):
-        data = await request.json()
-        score = float(data["input"])
-        return {"score": score, "label": score >= self.threshold}
+        self.lz4 = lz4.frame
+
+    def reconfigure(self, config: Config) -> None:
+        """Called automatically by Ray when Helm values change."""
+        self.tile_size = config.get("tile_size", 512)
+
+        # Load your weights here, e.g., via ONNX Runtime or torch
+        # self.session = ort.InferenceSession("model.onnx")
+
+        self.predict.set_max_batch_size(config["max_batch_size"])
+        self.predict.set_batch_wait_timeout_s(config["batch_wait_timeout_s"])
+
+    @serve.batch
+    async def predict(self, images: list[NDArray[np.uint8]]) -> list[float]:
+        """Batched inference — Ray collects concurrent requests and calls this together."""
+        batch = np.stack(images, axis=0, dtype=np.uint8)
+
+        # Perform batched inference here
+        # outputs = self.session.run(None, {"input": batch})
+        # return outputs[0].flatten().tolist()
+
+        # Mock prediction returning a list of floats
+        return [float(img.mean() / 255.0) for img in images]
+
+    @fastapi.post("/")
+    async def root(self, request: Request) -> Response:
+        # Receive and decompress LZ4 payload
+        data = await asyncio.to_thread(self.lz4.decompress, await request.body())
+
+        # Decode image to numpy array
+        image = (
+            np.frombuffer(data, dtype=np.uint8)
+            .reshape(self.tile_size, self.tile_size, 3)
+            .transpose(2, 0, 1)  # Convert to CHW format
+        )
+
+        result = await self.predict(image)
+        return Response(content=str(result), media_type="application/json")
 
 app = MyModel.bind()
 ```
@@ -63,7 +98,7 @@ app = MyModel.bind()
 
 - **`__init__`**: Executes once when the replica initializes. Ideal for static components like loading neural network weights into memory. For performance and hardware compatibility, it is recommended to format your weights as an ONNX model (see [Model Export](https://youtrack.rationai.cloud.e-infra.cz/articles/DEV-A-15/Model-Export)).
 - **`reconfigure`**: Executes automatically when the application receives dynamic configuration updates via Helm or the cluster management API.
-- **`FastAPI` Route (`@app_ingress.post`)**: Binds an external HTTP endpoint to accept standard JSON formatting directly.
+- **`FastAPI` Route (`@fastapi.post`)**: Binds an external HTTP endpoint to accept requests.
 
 ---
 
@@ -96,7 +131,9 @@ Kubernetes requires the resource specification associated with the code. Create 
             - fastapi
 ```
 
-For development and testing, prefer a dedicated branch in `working_dir` (for example `feature/my-new-model`) so unfinished changes do not affect other users. **Tip:** Append a query string to the working directory URL (e.g. `?v=1`) between testing updates to invalidate Ray's caching and force it to pick up your latest code, see [Troubleshooting section](troubleshooting.md).
+For development and testing, prefer a dedicated branch in `working_dir` (for example `feature/my-new-model`) so unfinished changes do not affect other users.
+
+**Tip:** Append a query string to the working directory URL (e.g. `?v=1`) between testing updates to invalidate Ray's caching and force it to pick up your latest code, see [Troubleshooting section](troubleshooting.md).
 
 ---
 
@@ -142,11 +179,104 @@ When the application indicates `RUNNING`, forward the service port locally:
 kubectl port-forward -n rationai-jobs-ns svc/rayservice-model-serve-svc 8000:8000
 ```
 
-Transmit a JSON payload to test the interface:
+Transmit an LZ4-compressed payload to test the interface:
 
-```bash
-curl -X POST http://localhost:8000/my-model/ -H "Content-Type: application/json" -d '{"input": 0.8}'
+```python
+import lz4.frame
+import numpy as np
+import requests
+
+# Create a mock 512x512 RGB tile
+tile = np.random.randint(0, 255, (512, 512, 3), dtype=np.uint8)
+payload = lz4.frame.compress(tile.tobytes())
+
+response = requests.post(
+    "http://localhost:8000/my-model/",
+    data=payload,
+    headers={"Content-Type": "application/octet-stream"}
+)
+print("Prediction:", response.json())
 ```
+
+---
+
+## Advanced: TensorRT Optimization
+
+When deploying models using ONNX Runtime, utilizing the **TensorrtExecutionProvider** can drastically improve inference speed. However, proper configuration requires specifying dynamic shapes, workspace sizes, and engine caching.
+
+### Updating Configuration
+
+In your `Config` class, add the necessary TensorRT parameters:
+
+```python
+from typing import NotRequired
+
+class Config(TypedDict):
+    tile_size: int
+    max_batch_size: int
+    batch_wait_timeout_s: float
+    trt_cache_path: str
+    intra_op_num_threads: int
+    trt_max_workspace_size: NotRequired[int]
+    trt_builder_optimization_level: NotRequired[int]
+```
+
+### Initializing the Provider
+
+Inside your `reconfigure` method, configure TensorRT options before instantiating the `InferenceSession`. Note that TensorRT compiles its execution plan (the "engine") specific to local hardware and input variable sizes.
+
+```python
+import os
+import onnxruntime as ort
+
+def reconfigure(self, config: Config) -> None:
+    self.tile_size = config.get("tile_size", 512)
+    max_batch = config["max_batch_size"]
+
+    cache_path = config["trt_cache_path"]
+    os.makedirs(cache_path, exist_ok=True)
+
+    # 1. Define input shapes (NCHW). For batched inputs, max dimension is max_batch_size.
+    min_shape = f"input:1x3x{self.tile_size}x{self.tile_size}"
+    opt_shape = f"input:{max_batch}x3x{self.tile_size}x{self.tile_size}"
+    max_shape = f"input:{max_batch}x3x{self.tile_size}x{self.tile_size}"
+
+    # 2. Key TensorRT parameters
+    trt_options = {
+        "device_id": 0,
+        "trt_fp16_enable": True,                     # Faster inference using FP16
+        "trt_engine_cache_enable": True,             # Cache to avoid rebuilds
+        "trt_engine_cache_path": cache_path,
+        "trt_timing_cache_enable": True,
+        "trt_max_workspace_size": config.get("trt_max_workspace_size", 8 * 1024**3), # 8GB default
+        "trt_builder_optimization_level": config.get("trt_builder_optimization_level", 1),
+        "trt_profile_min_shapes": min_shape,
+        "trt_profile_opt_shapes": opt_shape,
+        "trt_profile_max_shapes": max_shape,
+    }
+
+    sess_options = ort.SessionOptions()
+    sess_options.intra_op_num_threads = config["intra_op_num_threads"]
+    sess_options.inter_op_num_threads = 1
+    sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+    sess_options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+
+    self.session = ort.InferenceSession(
+        "model.onnx", # Replace with dynamic loader if needed
+        providers=[
+            ("TensorrtExecutionProvider", trt_options),
+            "CUDAExecutionProvider",
+            "CPUExecutionProvider"
+        ],
+        session_options=sess_options,
+    )
+```
+
+**Key Points:**
+
+- **Dynamic Shapes (`trt_profile_*`)**: You must provide limits defining exactly what batch sizes dimensions can enter. For images, a standard setup is `1x3xHxW` for the minimum, and `<batch>x3xHxW` for the optimal/maximum.
+- **Workspace Size (`trt_max_workspace_size`)**: By default, TensorRT only allocates a very small memory limit resolving kernels. Increasing this (for example to 8GB) helps TensorRT find much faster execution strategies.
+- **Cache Path (`trt_engine_cache_path`)**: Building the plan can take several minutes. Saving it inside a persistent volume (e.g. matching a `tensorrt-cache-pvc.yaml` bind) prevents latency spikes upon deployment restarts.
 
 ---
 

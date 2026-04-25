@@ -1,16 +1,17 @@
 # Model Service Documentation
 
-Welcome to the Model Service documentation. This service provides a scalable, production-ready infrastructure for deploying machine learning models for the RationAI project using Ray Serve on Kubernetes.
+Welcome to the Model Service documentation. This service provides a production-ready template for taking artificial intelligence models — currently used within the RationAI project — and putting them online so other systems can interact with them.
+
+Imagine you have trained a complex PyTorch image processing model. Model Service dictates how to wrap that model into a fast, scalable web application (an API) that answers HTTP requests, optimally utilizes expensive graphics cards (GPUs), and handles heavy traffic without crashing.
 
 ## What is Model Service?
 
-Model Service is a deployment framework that enables:
+Model Service is a deployment framework built on top of [Ray Serve](https://docs.ray.io/en/latest/serve/index.html) running inside Kubernetes. It enables:
 
-- **Scalable Model Serving**: Automatically scale model replicas based on request load
-- **Distributed Inference**: Distribute inference workloads across multiple workers and nodes
-- **Resource Management**: Efficiently manage CPU and GPU resources in Kubernetes
-- **Model Versioning**: Integration with MLflow for model lifecycle management
-- **Production-oriented**: Built on Ray Serve and KubeRay, with autoscaling and failure recovery features
+- **Making Python Models Accessible via API**: Any user or system can send a request (e.g., an image of a tissue tile) and retrieve a prediction within milliseconds.
+- **Handling Heavy Traffic (Auto-Scaling)**: If 1,000 requests arrive per second, the service automatically requests more servers (nodes) and runs more copies (replicas) of your model. When traffic subsides, it turns them off to save resources.
+- **Efficient Hardware Usage (Batching)**: Deep learning cards operate best when processing multiple inputs concurrently. Instead of predicting one image at a time, Model Service automatically accumulates incoming requests and processes them as a single fast batch.
+- **Serving Multiple Models at Once**: You can expose five completely different AI models on the same cluster, each with its own scaling rules.
 
 ## Key Features
 
