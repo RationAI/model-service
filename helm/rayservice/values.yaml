@@ -1,0 +1,9 @@
+workers:
+  - cpu-workers
+  - mig20-workers
+
+applications:
+  - episeg-1
+  - heatmap-builder
+  - prostate-classifier-1
+  - virchow2
