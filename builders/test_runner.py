@@ -18,7 +18,7 @@ class TestRunner:
         )
 
     @fastapi.post("/")
-    def run(self) -> dict:
+    def run(self) -> str:
         result = subprocess.run(
             [
                 sys.executable,
@@ -28,14 +28,15 @@ class TestRunner:
                 "-v",
                 "--tb=short",
                 "--no-header",
+                "-s",
+                "--color=no",
             ],
             capture_output=True,
             text=True,
         )
-        return {
-            "passed": result.returncode == 0,
-            "output": result.stdout,
-        }
+        return result.stdout + (
+            f"\nSTDERR:\n{result.stderr}" if result.returncode != 0 else ""
+        )
 
 
 app = TestRunner.bind()
