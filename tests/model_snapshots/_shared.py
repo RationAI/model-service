@@ -4,8 +4,6 @@ import hashlib
 import os
 from pathlib import Path
 
-import httpx
-import lz4.frame
 import numpy as np
 import pytest
 from numpy.typing import NDArray
@@ -22,7 +20,7 @@ def _sha256(path: Path) -> str:
 def _models_base_url() -> str:
     return os.environ.get(
         "MODEL_SERVICE_MODELS_BASE_URL",
-        "http://rayservice-model-tests-serve-svc.rationai-jobs-ns.svc.cluster.local:8000",
+        "http://rayservice-model-serve-svc.rationai-jobs-ns.svc.cluster.local:8000",
     )
 
 
@@ -47,31 +45,13 @@ def _read_tile_from_slide(
     return np.asarray(tile, dtype=np.uint8)
 
 
-def _classify(
-    model_id: str,
-    tile: NDArray[np.uint8],
-    timeout_s: float,
-) -> float:
-    url = f"{_models_base_url()}/{model_id}/"
-    data = lz4.frame.compress(tile.tobytes())
-    response = httpx.post(url, content=data, timeout=httpx.Timeout(timeout_s))
-    response.raise_for_status()
-    return float(response.json())
+def _client(timeout_s: float = 600.0):
+    try:
+        from rationai import Client
+    except ImportError:
+        pytest.skip("Python package `rationai` is not installed.")
 
-
-def _segment(
-    model_id: str,
-    tile: NDArray[np.uint8],
-    timeout_s: float,
-) -> NDArray[np.float16]:
-    h, w = tile.shape[:2]
-    url = f"{_models_base_url()}/{model_id}/"
-    data = lz4.frame.compress(tile.tobytes())
-    response = httpx.post(url, content=data, timeout=httpx.Timeout(timeout_s))
-    response.raise_for_status()
-    return np.frombuffer(
-        lz4.frame.decompress(response.content), dtype=np.float16
-    ).reshape(-1, h, w)
+    return Client(models_base_url=_models_base_url(), timeout=timeout_s)
 
 
 def run_binary_classifier_case(
@@ -86,7 +66,9 @@ def run_binary_classifier_case(
     tile = _read_tile_from_slide(
         slide_path=slide_path, tile_size=tile_size, level=level
     )
-    actual_score = _classify(model_id=model_id, tile=tile, timeout_s=timeout_s)
+
+    with _client(timeout_s=timeout_s) as client:
+        actual_score = float(client.models.classify_image(model=model_id, image=tile))
 
     assert abs(actual_score - expected_score) <= tolerance, (
         f"Binary score mismatch: expected={expected_score}, actual={actual_score}, "
@@ -112,7 +94,9 @@ def run_semantic_segmentation_case(
         slide_path=slide_path, tile_size=tile_size, level=level
     )
     expected = np.load(expected_array_path)
-    actual = _segment(model_id=model_id, tile=tile, timeout_s=timeout_s)
+
+    with _client(timeout_s=timeout_s) as client:
+        actual = np.asarray(client.models.segment_image(model=model_id, image=tile))
 
     if actual.shape != expected.shape:
         pytest.fail(f"Shape mismatch: expected={expected.shape}, actual={actual.shape}")

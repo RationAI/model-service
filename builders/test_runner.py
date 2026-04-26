@@ -27,15 +27,14 @@ class TestRunner:
                 "tests/model_snapshots/",
                 "-v",
                 "--tb=short",
+                "--no-header",
             ],
             capture_output=True,
             text=True,
         )
         return {
-            "returncode": result.returncode,
-            "stdout": result.stdout,
-            "stderr": result.stderr,
             "passed": result.returncode == 0,
+            "output": result.stdout,
         }
 
 
