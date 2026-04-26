@@ -7,3 +7,4 @@ applications:
   - heatmap-builder
   - prostate-classifier-1
   - virchow2
+  - test-runner

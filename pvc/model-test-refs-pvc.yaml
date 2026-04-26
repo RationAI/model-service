@@ -2,11 +2,11 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: model-test-refs-pvc
-  labels:
-    app: model-service-tests
+  namespace: rationai-jobs-ns
 spec:
   accessModes:
     - ReadWriteMany
   resources:
     requests:
       storage: 5Gi
+  storageClassName: nfs-csi

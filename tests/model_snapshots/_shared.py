@@ -20,7 +20,7 @@ def _sha256(path: Path) -> str:
 def _models_base_url() -> str:
     return os.environ.get(
         "MODEL_SERVICE_MODELS_BASE_URL",
-        "http://rayservice-model-serve-svc.rationai-jobs-ns.svc.cluster.local:8000",
+        "http://rayservice-model-tests-serve-svc.rationai-jobs-ns.svc.cluster.local:8000",
     )
 
 
@@ -45,7 +45,7 @@ def _read_tile_from_slide(
     return np.asarray(tile, dtype=np.uint8)
 
 
-def _client(timeout_s: float = 600.0):
+def _client(timeout_s: float = 1600.0):
     try:
         from rationai import Client
     except ImportError:
@@ -82,7 +82,7 @@ def run_semantic_segmentation_case(
     expected_array_path: Path | str,
     tile_size: int = 1024,
     level: int = 0,
-    timeout_s: float = 600.0,
+    timeout_s: float = 1200.0,
     atol: float = 0.0,
     rtol: float = 0.0,
 ) -> None:
