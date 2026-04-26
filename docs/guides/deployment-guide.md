@@ -142,10 +142,10 @@ For development and testing, prefer a dedicated branch in `working_dir` (for exa
 The configuration is rendered by Helm. Deploy it with:
 
 ```bash
-helm upgrade --install rayservice-model helm/rayservice -n rationai-jobs-ns
+helm upgrade --install <release-name> helm/rayservice -n rationai-jobs-ns
 ```
 
-In this command, `rayservice-model` is the Helm release name parameter. Change it to your desired release name (for example `rayservice-model-my-model`) when running isolated test deployments.
+In this command, `<release-name>` is the Helm release name parameter. Change it to your desired release name (for example `<release-name>-my-model`) when running isolated test deployments.
 
 This renders the templates and provisions the deployment on the target cluster namespace.
 
@@ -157,10 +157,10 @@ Ray performs several bootstrap steps, including node assignment, code extraction
 
 ```bash
 # Monitor logical Ray Serve applications continuously
-kubectl get rayservice rayservice-model -n rationai-jobs-ns -w
+kubectl get rayservice <release-name> -n rationai-jobs-ns -w
 
 # Monitor physical pod scheduling limits
-kubectl get pods -n rationai-jobs-ns -l ray.io/cluster=rayservice-model
+kubectl get pods -n rationai-jobs-ns -l ray.io/cluster=<release-name>
 ```
 
 If Ray service remains offline, monitor the Ray head node logs:
@@ -176,7 +176,7 @@ kubectl logs -n rationai-jobs-ns -l ray.io/node-type=head -f
 When the application indicates `RUNNING`, forward the service port locally:
 
 ```bash
-kubectl port-forward -n rationai-jobs-ns svc/rayservice-model-serve-svc 8000:8000
+kubectl port-forward -n rationai-jobs-ns svc/<release-name>-serve-svc 8000:8000
 ```
 
 Transmit an LZ4-compressed payload to test the interface:
@@ -398,7 +398,7 @@ metadata:
 spec:
   type: LoadBalancer
   selector:
-    ray.io/cluster: rayservice-model
+    ray.io/cluster: <release-name>
   ports:
     - port: 80
       targetPort: 8000
@@ -437,7 +437,7 @@ Deploy multiple models by adding multiple application definitions to `helm/rayse
 3. Redeploy with Helm:
 
 ```bash
-helm upgrade --install rayservice-model helm/rayservice -n rationai-jobs-ns
+helm upgrade --install <release-name> helm/rayservice -n rationai-jobs-ns
 ```
 
 4. If `runtime_env.working_dir` URL is unchanged and old code is still used, bump a cache-busting query parameter (for example `...?v=2`) and redeploy.
@@ -449,7 +449,7 @@ helm upgrade --install rayservice-model helm/rayservice -n rationai-jobs-ns
 vim helm/rayservice/applications/my-model.yaml
 
 # Apply changes with Helm
-helm upgrade --install rayservice-model helm/rayservice -n rationai-jobs-ns
+helm upgrade --install <release-name> helm/rayservice -n rationai-jobs-ns
 ```
 
 KubeRay will reconcile the RayService and attempt a rolling-style update:
@@ -471,7 +471,7 @@ user_config:
 Apply the update:
 
 ```bash
-helm upgrade --install rayservice-model helm/rayservice -n rationai-jobs-ns
+helm upgrade --install <release-name> helm/rayservice -n rationai-jobs-ns
 ```
 
 ## Rollback
@@ -483,8 +483,8 @@ If deployment fails, rollback:
 # Instead, view KubeRay status and events, then re-apply a known-good spec.
 
 # Inspect current state and recent events
-kubectl get rayservice rayservice-model -n rationai-jobs-ns -o yaml
-kubectl describe rayservice rayservice-model -n rationai-jobs-ns
+kubectl get rayservice <release-name> -n rationai-jobs-ns -o yaml
+kubectl describe rayservice <release-name> -n rationai-jobs-ns
 
 # Check Ray Serve controller logs (usually shows the root cause)
 kubectl logs -n rationai-jobs-ns -l ray.io/node-type=head --tail=200
@@ -497,7 +497,7 @@ kubectl logs -n rationai-jobs-ns -l ray.io/node-type=head --tail=200
 **Check RayService status:**
 
 ```bash
-kubectl describe rayservice rayservice-model -n rationai-jobs-ns
+kubectl describe rayservice <release-name> -n rationai-jobs-ns
 ```
 
 **Common issues:**
@@ -513,7 +513,7 @@ kubectl describe rayservice rayservice-model -n rationai-jobs-ns
 
 ```bash
 # View dashboard
-kubectl port-forward -n rationai-jobs-ns svc/rayservice-model-head-svc 8265:8265
+kubectl port-forward -n rationai-jobs-ns svc/<release-name>-head-svc 8265:8265
 
 # Check logs
 kubectl logs -n rationai-jobs-ns -l ray.io/node-type=worker --tail=100
@@ -532,7 +532,7 @@ kubectl logs -n rationai-jobs-ns -l ray.io/node-type=worker --tail=100
 
 ```bash
 # Ray dashboard: http://localhost:8265
-kubectl port-forward -n rationai-jobs-ns svc/rayservice-model-head-svc 8265:8265
+kubectl port-forward -n rationai-jobs-ns svc/<release-name>-head-svc 8265:8265
 ```
 
 **Possible solutions:**

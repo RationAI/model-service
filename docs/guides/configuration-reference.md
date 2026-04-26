@@ -118,10 +118,10 @@ Sizing rule of thumb:
 Deploy or update with Helm:
 
 ```bash
-helm upgrade --install rayservice-model helm/rayservice -n rationai-jobs-ns
+helm upgrade --install <release-name> helm/rayservice -n rationai-jobs-ns
 ```
 
-In this command, `rayservice-model` is the Helm release name parameter. You can change it (for example `rayservice-model-my-model`) to run isolated test releases.
+In this command, `<release-name>` is the Helm release name parameter. You can change it (for example `<release-name>-my-model`) to run isolated test releases.
 
 ## 6. Working Directory Cache Note
 

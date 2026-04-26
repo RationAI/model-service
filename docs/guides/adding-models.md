@@ -357,10 +357,10 @@ Ensure your deployment specifies `num_gpus` greater than `0`. Model Service prov
 Deploy your model:
 
 ```bash
-helm upgrade --install rayservice-model helm/rayservice -n rationai-jobs-ns
+helm upgrade --install <release-name> helm/rayservice -n rationai-jobs-ns
 ```
 
-In this command, `rayservice-model` is the Helm release name parameter. Change it if you want a different release name.
+In this command, `<release-name>` is the Helm release name parameter. Change it if you want a different release name.
 
 Monitor deployment:
 
@@ -372,7 +372,7 @@ kubectl logs -n rationai-jobs-ns -l ray.io/node-type=worker --tail=100
 Open the Ray dashboard:
 
 ```bash
-kubectl port-forward -n rationai-jobs-ns svc/rayservice-model-head-svc 8265:8265
+kubectl port-forward -n rationai-jobs-ns svc/<release-name>-head-svc 8265:8265
 ```
 
 Then visit `http://127.0.0.1:8265`.

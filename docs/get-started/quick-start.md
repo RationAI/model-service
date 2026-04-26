@@ -60,10 +60,10 @@ For your first deployment, we will use the existing configuration without change
 To deploy the service, run Helm:
 
 ```bash
-helm upgrade --install rayservice-model helm/rayservice -n rationai-jobs-ns
+helm upgrade --install <release-name> helm/rayservice -n rationai-jobs-ns
 ```
 
-In this command, `rayservice-model` is the Helm release name parameter. Change it to your own release name (for example `rayservice-model-my-model`) to run parallel test deployments.
+In this command, `<release-name>` is the Helm release name parameter. Change it to your own release name (for example `<release-name>-my-model`) to run parallel test deployments.
 
 This command automates the deployment process by compiling your Helm templates and applying the final manifest to the Kubernetes cluster.
 
@@ -80,7 +80,7 @@ Deploying models takes time as the cluster downloads images and starts worker po
 Check the overall status of your RayService:
 
 ```bash
-kubectl get rayservice rayservice-model -n rationai-jobs-ns
+kubectl get rayservice <release-name> -n rationai-jobs-ns
 ```
 
 Check the status of the individual pods:
@@ -92,7 +92,7 @@ kubectl get pods -n rationai-jobs-ns
 If the pods fail to start, you can inspect the details for troubleshooting:
 
 ```bash
-kubectl describe rayservice rayservice-model -n rationai-jobs-ns
+kubectl describe rayservice <release-name> -n rationai-jobs-ns
 ```
 
 ### Note: Using the Ray Dashboard
@@ -100,7 +100,7 @@ kubectl describe rayservice rayservice-model -n rationai-jobs-ns
 Ray provides a dashboard for visual monitoring. To access it, forward the port to your local machine:
 
 ```bash
-kubectl port-forward -n rationai-jobs-ns svc/rayservice-model-head-svc 8265:8265
+kubectl port-forward -n rationai-jobs-ns svc/<release-name>-head-svc 8265:8265
 ```
 
 Open a web browser and navigate to `http://127.0.0.1:8265`. Your models are ready when their Serve applications display a **RUNNING** status.
@@ -112,7 +112,7 @@ Open a web browser and navigate to `http://127.0.0.1:8265`. Your models are read
 To communicate with the model from your local machine, forward the Serve port:
 
 ```bash
-kubectl port-forward -n rationai-jobs-ns svc/rayservice-model-serve-svc 8000:8000
+kubectl port-forward -n rationai-jobs-ns svc/<release-name>-serve-svc 8000:8000
 ```
 
 You can now send HTTP requests to `http://localhost:8000/prostate-classifier-1`.
@@ -124,7 +124,7 @@ You can now send HTTP requests to `http://localhost:8000/prostate-classifier-1`.
 When you are finished, delete the deployment to free up cluster resources:
 
 ```bash
-helm uninstall rayservice-model -n rationai-jobs-ns
+helm uninstall <release-name> -n rationai-jobs-ns
 ```
 
 ---
