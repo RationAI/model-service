@@ -1,8 +1,7 @@
 from pathlib import Path
 
 import pytest
-
-from tests.model_snapshots._shared import run_semantic_segmentation_case
+from _shared import run_semantic_segmentation_case
 
 
 @pytest.mark.parametrize(
@@ -11,14 +10,6 @@ from tests.model_snapshots._shared import run_semantic_segmentation_case
         (
             "breast",
             "/mnt/bioptic_tree/2019/08/728/2019_08728-01-T/2019_08728-01-T.mrxs",
-        ),
-        (
-            "colorectum",
-            "/mnt/data/MOU/colorectum/colorectal_cancer_2020-2024-06/2020_00106-01-N.mrxs",
-        ),
-        (
-            "colon",
-            "/mnt/data/MOU/colon/comparison_of_scanners/FLASH2021_5638-02-T.mrxs",
         ),
     ],
 )

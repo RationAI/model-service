@@ -2,16 +2,15 @@ import json
 from pathlib import Path
 
 import pytest
-
-from tests.model_snapshots._shared import run_binary_classifier_case
+from _shared import run_binary_classifier_case
 
 
 @pytest.mark.parametrize(
     "label, slide_path",
     [
         (
-            "breast",
-            "/mnt/bioptic_tree/2019/08/728/2019_08728-01-T/2019_08728-01-T.mrxs",
+            "colon",
+            "/mnt/data/MOU/colon/comparison_of_scanners/FLASH2021_5638-02-T.mrxs",
         ),
     ],
 )

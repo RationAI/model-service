@@ -1,34 +1,36 @@
 from __future__ import annotations
 
 import hashlib
-import importlib
 import os
 from pathlib import Path
 
+import httpx
+import lz4.frame
 import numpy as np
 import pytest
-
-
-def _required_env(var_name: str) -> str:
-    value = os.environ.get(var_name)
-    if not value:
-        pytest.skip(f"Missing env var `{var_name}`.")
-    return value
+from numpy.typing import NDArray
 
 
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
-    with path.open("rb") as file_handle:
-        for chunk in iter(lambda: file_handle.read(1024 * 1024), b""):
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _models_base_url() -> str:
+    return os.environ.get(
+        "MODEL_SERVICE_MODELS_BASE_URL",
+        "http://rayservice-model-tests-serve-svc.rationai-jobs-ns.svc.cluster.local:8000",
+    )
 
 
 def _read_tile_from_slide(
     slide_path: str,
     tile_size: int,
     level: int,
-) -> np.ndarray:
+) -> NDArray[np.uint8]:
     try:
         from ratiopath.openslide import OpenSlide
     except ImportError:
@@ -45,16 +47,31 @@ def _read_tile_from_slide(
     return np.asarray(tile, dtype=np.uint8)
 
 
-def _client(
-    models_base_url: str,
+def _classify(
+    model_id: str,
+    tile: NDArray[np.uint8],
     timeout_s: float,
-):
-    try:
-        rationai = importlib.import_module("rationai")
-    except ImportError:
-        pytest.skip("Python package `rationai` is not installed.")
+) -> float:
+    url = f"{_models_base_url()}/{model_id}/"
+    data = lz4.frame.compress(tile.tobytes())
+    response = httpx.post(url, content=data, timeout=httpx.Timeout(timeout_s))
+    response.raise_for_status()
+    return float(response.json())
 
-    return rationai.Client(models_base_url=models_base_url, timeout=timeout_s)
+
+def _segment(
+    model_id: str,
+    tile: NDArray[np.uint8],
+    timeout_s: float,
+) -> NDArray[np.float16]:
+    h, w = tile.shape[:2]
+    url = f"{_models_base_url()}/{model_id}/"
+    data = lz4.frame.compress(tile.tobytes())
+    response = httpx.post(url, content=data, timeout=httpx.Timeout(timeout_s))
+    response.raise_for_status()
+    return np.frombuffer(
+        lz4.frame.decompress(response.content), dtype=np.float16
+    ).reshape(-1, h, w)
 
 
 def run_binary_classifier_case(
@@ -66,27 +83,11 @@ def run_binary_classifier_case(
     timeout_s: float = 600.0,
     tolerance: float = 0.00001,
 ) -> None:
-    models_base_url = os.environ.get(
-        "MODEL_SERVICE_MODELS_BASE_URL",
-        "http://rayservice-model-serve-svc.rationai-jobs-ns.svc.cluster.local:8000",
-    )
-
     tile = _read_tile_from_slide(
         slide_path=slide_path, tile_size=tile_size, level=level
     )
+    actual_score = _classify(model_id=model_id, tile=tile, timeout_s=timeout_s)
 
-    with _client(models_base_url=models_base_url, timeout_s=timeout_s) as client:
-        prediction = client.models.classify_image(
-            model=model_id, image=tile, timeout=timeout_s
-        )
-
-    if not isinstance(prediction, int | float):
-        pytest.fail(
-            "Expected binary classifier to return scalar score, "
-            f"got {type(prediction)}: {prediction}"
-        )
-
-    actual_score = float(prediction)
     assert abs(actual_score - expected_score) <= tolerance, (
         f"Binary score mismatch: expected={expected_score}, actual={actual_score}, "
         f"tolerance={tolerance}"
@@ -103,37 +104,23 @@ def run_semantic_segmentation_case(
     atol: float = 0.0,
     rtol: float = 0.0,
 ) -> None:
-    models_base_url = os.environ.get(
-        "MODEL_SERVICE_MODELS_BASE_URL",
-        "http://rayservice-model-serve-svc.rationai-jobs-ns.svc.cluster.local:8000",
-    )
     expected_array_path = Path(expected_array_path)
-
     if not expected_array_path.exists():
-        pytest.fail(f"Expected array file does not exist: {expected_array_path}")
+        pytest.fail(f"Reference file does not exist: {expected_array_path}")
 
     tile = _read_tile_from_slide(
         slide_path=slide_path, tile_size=tile_size, level=level
     )
     expected = np.load(expected_array_path)
-
-    with _client(models_base_url=models_base_url, timeout_s=timeout_s) as client:
-        prediction = client.models.segment_image(
-            model=model_id, image=tile, timeout=timeout_s
-        )
-
-    actual = np.asarray(prediction)
+    actual = _segment(model_id=model_id, tile=tile, timeout_s=timeout_s)
 
     if actual.shape != expected.shape:
-        pytest.fail(
-            f"Semantic shape mismatch: expected={expected.shape}, actual={actual.shape}"
-        )
+        pytest.fail(f"Shape mismatch: expected={expected.shape}, actual={actual.shape}")
 
     if not np.allclose(actual, expected, rtol=rtol, atol=atol):
         mismatch = np.abs(actual.astype(np.float32) - expected.astype(np.float32)).max()
         pytest.fail(
-            "Semantic output mismatch: arrays differ beyond tolerance "
-            f"(atol={atol}, rtol={rtol}, max_abs_diff={mismatch})"
+            f"Output mismatch beyond tolerance (atol={atol}, rtol={rtol}, max_abs_diff={mismatch})"
         )
 
 
