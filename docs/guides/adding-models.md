@@ -275,24 +275,24 @@ Add your model file to `helm/rayservice/applications/my-model.yaml`:
 
 ```yaml
 - name: my-model
-    import_path: models.my_onnx_model:app
-    route_prefix: /my-model
-    runtime_env:
-        working_dir: https://github.com/RationAI/model-service/archive/refs/heads/your-feature-branch.zip
-        pip:
+  import_path: models.my_onnx_model:app
+  route_prefix: /my-model
+  runtime_env:
+    working_dir: https://github.com/RationAI/model-service/archive/refs/heads/your-feature-branch.zip
+    pip:
+      - onnxruntime>=1.23.2
+      - numpy
+  deployments:
+    - name: MyONNXModel
+      autoscaling_config:
+        min_replicas: 1
+        max_replicas: 4
+      ray_actor_options:
+        num_cpus: 2
+        memory: 4294967296 # 4 GiB
+        runtime_env:
+          pip:
             - onnxruntime>=1.23.2
-            - numpy
-    deployments:
-        - name: MyONNXModel
-            autoscaling_config:
-                min_replicas: 1
-                max_replicas: 4
-            ray_actor_options:
-                num_cpus: 2
-                memory: 4294967296 # 4 GiB
-                runtime_env:
-                    pip:
-                        - onnxruntime>=1.23.2
 ```
 
 In this repository, model dependencies can be installed under `deployments[*].ray_actor_options.runtime_env.pip` (not only at `runtime_env.pip` at application level). This is useful when different deployments need different dependencies.
