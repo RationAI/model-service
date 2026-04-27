@@ -77,7 +77,7 @@ class MyModel:
         return (batch.mean(axis=(1, 2, 3)) / 255.0).tolist()
 
     @fastapi.post("/")
-    async def root(self, request: Request) -> list[float]:
+    async def root(self, request: Request) -> float:
         # Receive and decompress LZ4 payload
         data = await asyncio.to_thread(self.lz4.decompress, await request.body())
 
