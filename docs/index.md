@@ -1,93 +1,80 @@
 # Model Service Documentation
 
-Welcome to the Model Service documentation. This service provides a production-ready template for taking artificial intelligence models — currently used within the RationAI project — and putting them online so other systems can interact with them.
+## Overview
 
-Imagine you have trained a complex PyTorch image processing model. Model Service dictates how to wrap that model into a fast, scalable web application (an API) that answers HTTP requests, optimally utilizes expensive graphics cards (GPUs), and handles heavy traffic without crashing.
+Model Service is a Helm based deployment framework for serving ML models on Kubernetes with Ray Serve.
 
-## What is Model Service?
+Problem solved:
+turn Python model code into stable HTTP endpoints that can batch requests, scale replicas, and run on CPU or GPU workers.
 
-Model Service is a deployment framework built on top of [Ray Serve](https://docs.ray.io/en/latest/serve/index.html) running inside Kubernetes. It enables:
+Use this documentation when:
 
-- **Making Python Models Accessible via API**: Any user or system can send a request (e.g., an image of a tissue tile) and retrieve a prediction within milliseconds.
-- **Handling Heavy Traffic (Auto-Scaling)**: If 1,000 requests arrive per second, the service automatically requests more servers (nodes) and runs more copies (replicas) of your model. When traffic subsides, it turns them off to save resources.
-- **Efficient Hardware Usage (Batching)**: Deep learning cards operate best when processing multiple inputs concurrently. Instead of predicting one image at a time, Model Service automatically accumulates incoming requests and processes them as a single fast batch.
-- **Serving Multiple Models at Once**: You can expose five completely different AI models on the same cluster, each with its own scaling rules.
+- you want to deploy a model as an API endpoint,
+- you need to tune throughput and latency,
+- or you operate multi-model workloads on one Ray cluster.
 
-## Key Features
+## What You Get
 
-### Auto-Scaling
+- Ray Serve applications managed by a Helm chart in `helm/rayservice/`.
+- Per-model configuration in `helm/rayservice/applications/`.
+- Default worker profiles in `helm/rayservice/workers/`.
+- Operational guides for deployment, scaling, and troubleshooting.
 
-Model Service automatically adjusts the number of model replicas based on incoming request volume, ensuring optimal resource utilization and response times.
+## Start Here
 
-### Multi-Model Deployment
+### New user path
 
-Deploy multiple models simultaneously with isolated resource allocations and independent scaling policies.
+1. [Quick Start](get-started/quick-start.md)
+2. [Deployment Guide](guides/deployment-guide.md)
+3. [Troubleshooting](guides/troubleshooting.md)
 
-### GPU/CPU Support
+### Model author path
 
-Flexible resource allocation supporting both CPU-based and GPU-accelerated models with hardware-specific worker groups.
+1. [Adding New Models](guides/adding-models.md)
+2. [Configuration Reference](guides/configuration-reference.md)
+3. [Deployment Guide](guides/deployment-guide.md)
 
-### Kubernetes Native
+### Operator path
 
-Leverages KubeRay operator for seamless integration with Kubernetes, enabling declarative configuration and GitOps workflows.
+1. [Configuration Reference](guides/configuration-reference.md)
+2. [Architecture Overview](architecture/overview.md)
+3. [Troubleshooting](guides/troubleshooting.md)
 
-## Why Ray Serve?
+## Documentation Map
 
-Model Service is built on top of Ray Serve because it combines a simple developer experience with strong production capabilities:
+### Getting Started
 
-- **Unified batch and online inference**: The same Ray cluster can handle real-time HTTP requests and large batch jobs, which matches RationAI's mix of interactive and offline pathology workloads.
-- **Python‑native API**: Models are implemented as regular Python classes or functions with decorators, making it easy for researchers to contribute without learning a heavy framework.
-- **Autoscaling built in**: Ray Serve natively scales replicas based on request pressure and integrates with Ray's cluster autoscaler to add/remove worker pods.
-- **Multi‑model support**: Multiple independent applications and deployments can run side‑by‑side on one cluster while isolating resources per model.
-
-Alternative approaches (plain Kubernetes deployments, custom Flask/FastAPI services, or specialized serving stacks like TorchServe or TF Serving) either lack first‑class autoscaling orchestration across many models, or are tightly coupled to specific ML frameworks. Ray Serve, together with KubeRay, lets us:
-
-- Express all infrastructure declaratively through Helm charts and values.
-- Share the same cluster across heterogeneous models and hardware (CPU/GPU).
-- Keep the operational surface smaller by relying on one general‑purpose serving layer instead of many ad‑hoc microservices.
-
-## Use Cases
-
-Model Service is designed for:
-
-- **Pathology Image Analysis**: Deploy models for tissue classification, nuclei detection, and other pathology tasks
-- **Batch Processing**: Handle large-scale inference workloads efficiently
-- **Real-time Inference**: Serve predictions with low latency for interactive applications
-- **Research Experiments**: Quickly deploy and test new model versions
-
-## Documentation Contents
-
-### Get Started
-
-- [**Quick Start**](get-started/quick-start.md): Deploy the reference model in minutes.
+- [Quick Start](get-started/quick-start.md): first deployment using a dedicated test release name.
 
 ### Guides
 
-- [**Adding Models**](guides/adding-models.md): How to write, package, and integrate your own Python models.
-- [**Deployment Guide**](guides/deployment-guide.md): Production checklist, resource planning (CPU/GPU), and networking.
-- [**Configuration Reference**](guides/configuration-reference.md): Detailed explanation of Helm configuration settings.
-- [**Troubleshooting**](guides/troubleshooting.md): Common errors (OOM, hang scenarios) and solutions.
+- [Adding New Models](guides/adding-models.md): implement model code and bind routes.
+- [Deployment Guide](guides/deployment-guide.md): safe deployment workflow and production checklist.
+- [Configuration Reference](guides/configuration-reference.md): source of truth for Helm and Ray Serve settings.
+- [Troubleshooting](guides/troubleshooting.md): diagnostics for deployment and runtime failures.
 
-### Architecture Deep Dive
+### Architecture
 
-- [**Overview**](architecture/overview.md): High-level system design and component hierarchy.
-- [**Request Lifecycle**](architecture/request-lifecycle.md): Trace a request from Ingress to Worker.
-- [**Queues & Backpressure**](architecture/queues-and-backpressure.md): Understanding flow control and overload protection.
-- [**Batching**](architecture/batching.md): How request coalescing works under the hood.
+- [Overview](architecture/overview.md): system components and scaling model.
+- [Request Lifecycle](architecture/request-lifecycle.md): end-to-end request flow.
+- [Queues and Backpressure](architecture/queues-and-backpressure.md): overload behavior and queue tuning.
+- [Batching](architecture/batching.md): how request coalescing works per replica.
 
-## Getting Help
+## Important Notes
 
-- **Documentation**: Browse the guides and reference materials in this documentation
-- **Issues**: Report bugs or request features via [GitHub Issues](https://github.com/RationAI/model-service/issues)
-- **Contact**: Reach out to the RationAI team at Masaryk University
-
-## Next Steps
-
-Ready to get started? Follow our [Quick Start Guide](get-started/quick-start.md) to deploy your first model.
+- Use a dedicated test release name (for example `rayservice-model-<test>`) while experimenting.
+- Keep default worker profiles unless you need specific hardware or scheduling behavior.
+- Tune application/deployment settings first, worker templates second.
 
 ## Glossary
 
-- **RayService**: KubeRay custom resource that manages a Ray cluster plus a Ray Serve application, including updates.
-- **Deployment (Ray Serve)**: A scalable unit (replicas) that runs your model code.
-- **Replica**: One running instance of a deployment.
-- **Worker group (KubeRay)**: A set of Ray worker pods (e.g., CPU or GPU workers) with independent scaling bounds.
+- RayService: KubeRay custom resource managing a Ray cluster plus Serve applications.
+- Deployment (Ray Serve): scalable unit running one part of model code.
+- Replica: one running instance of a deployment.
+- Worker group: pool of Ray worker pods with its own resource profile.
+
+## Related Links
+
+- [GitHub repository](https://github.com/RationAI/model-service)
+- [KubeRay installation guide](https://docs.ray.io/en/latest/cluster/kubernetes/getting-started/kuberay-operator-installation.html)
+- [Ray Serve on Kubernetes](https://docs.ray.io/en/latest/serve/production-guide/kubernetes.html)

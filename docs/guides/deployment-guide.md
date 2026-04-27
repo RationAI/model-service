@@ -77,7 +77,7 @@ class MyModel:
         return (batch.mean(axis=(1, 2, 3)) / 255.0).tolist()
 
     @fastapi.post("/")
-      async def root(self, request: Request) -> list[float]:
+    async def root(self, request: Request) -> list[float]:
         # Receive and decompress LZ4 payload
         data = await asyncio.to_thread(self.lz4.decompress, await request.body())
 
@@ -145,7 +145,7 @@ The configuration is rendered by Helm. Deploy it with:
 helm upgrade --install <release-name> helm/rayservice -n rationai-jobs-ns
 ```
 
-In this command, `<release-name>` is the Helm release name parameter. Change it to your desired release name (for example `<release-name>-my-model`) when running isolated test deployments.
+In this command, `<release-name>` is your Helm release name. Use a dedicated test name (for example `rayservice-model-my-model`) for isolated deployments.
 
 This renders the templates and provisions the deployment on the target cluster namespace.
 
@@ -318,91 +318,20 @@ _If you request only 20 CPUs in Kubernetes, Ray will detect that some CPU is use
 
 ### Autoscaling Configuration
 
-**Choose appropriate scaling parameters:**
+For exact autoscaling formulas and tuning heuristics, see [Autoscaling Strategies](configuration-reference.md#autoscaling-strategies) in the configuration reference.
 
-```yaml
-autoscaling_config:
-  min_replicas: 1
-  max_replicas: 10
-  target_ongoing_requests: 20
+### Configuration Details (Reference)
 
-  # Advanced stabilization
-  upscale_delay_s: 30
-  downscale_delay_s: 600
-```
+To keep this guide focused on deployment flow (and avoid duplicated config docs), detailed settings are maintained in one place:
 
-**Key Tuning Recommendations:**
+- [Application Definition](configuration-reference.md#2-application-definition): app-level fields (`import_path`, `route_prefix`, `runtime_env`, `deployments`).
+- [Deployment-Level Tuning](configuration-reference.md#3-deployment-level-tuning): `max_ongoing_requests`, `max_queued_requests`, `autoscaling_config`, `ray_actor_options`, `user_config`.
+- [Autoscaling Strategies](configuration-reference.md#autoscaling-strategies): `target_ongoing_requests`, `upscale_delay_s`, `downscale_delay_s`.
+- [Cluster and Worker Resources](configuration-reference.md#4-cluster-and-worker-resources): worker sizing, CPU/GPU pools, resource requests/limits.
 
-1.  **`target_ongoing_requests`**:
-    - **Lower this value** (e.g., 5-10) for latency-sensitive models or if your model is CPU-heavy. This forces the system to scale out sooner.
-    - **Increase this value** (e.g., 50-100) for simple models where a single replica can juggle many async requests.
+For model-centric examples (including `user_config` patterns), see [Adding New Models](adding-models.md#rayservice-configuration).
 
-2.  **`upscale_delay_s`**:
-    - Keep this low (e.g., `0s` to `30s`) so the system reacts quickly to traffic spikes.
-
-3.  **`downscale_delay_s`**:
-    - Keep this high (e.g., `600s`) to avoid "thrashing". It is cheaper to keep an idle replica for 10 minutes than to re-initialize a heavy model (loading weights, etc.) every time traffic dips for a minute.
-
-For the exact formulas and definitions of these settings, see the [Configuration Reference](configuration-reference.md#autoscaling-strategies).
-
-### High Availability
-
-**For production workloads:**
-
-```yaml
-# Multiple replicas
-autoscaling_config:
-  min_replicas: 2 # At least 2 for redundancy
-
-# Multiple workers
-workerGroupSpecs:
-  - groupName: cpu-workers
-    minReplicas: 2
-    maxReplicas: 10
-```
-
-### Resource Limits
-
-**Always set resource limits:**
-
-```yaml
-containers:
-  - name: ray-worker
-    resources:
-      requests: # Guaranteed resources
-        cpu: 8
-        memory: 16Gi
-      limits: # Maximum resources
-        cpu: 12
-        memory: 20Gi
-```
-
-### Network Configuration
-
-**Proxy settings:**
-
-```yaml
-env:
-  - name: HTTPS_PROXY
-    value: "http://proxy.example.com:3128"
-```
-
-**Service configuration:**
-
-```yaml
-# If you need external access
-apiVersion: v1
-kind: Service
-metadata:
-  name: rayservice-external
-spec:
-  type: LoadBalancer
-  selector:
-    ray.io/cluster: <release-name>
-  ports:
-    - port: 80
-      targetPort: 8000
-```
+> **Recommendation:** Keep the default worker profiles unless you need specific hardware or scheduling behavior. In most deployments, users should tune application/deployment settings first and only customize worker templates when necessary.
 
 ## Multi-Model Deployment
 
@@ -552,7 +481,7 @@ kubectl port-forward -n rationai-jobs-ns svc/<release-name>-head-svc 8265:8265
 6. **Documentation**: Document custom configurations
 7. **Backup**: Keep backups of working configurations
 
-## Next Steps
+## Related Guides
 
 - [Configuration reference](configuration-reference.md)
 - [Architecture overview](../architecture/overview.md)

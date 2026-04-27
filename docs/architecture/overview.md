@@ -145,7 +145,7 @@ Common commands:
 kubectl get pods -n rationai-jobs-ns
 kubectl top pods -n rationai-jobs-ns
 kubectl logs -n rationai-jobs-ns <pod-name>
-kubectl describe rayservice rayservice-model -n rationai-jobs-ns
+kubectl describe rayservice <release-name> -n rationai-jobs-ns
 ```
 
 Ray can export Prometheus metrics (when metrics collection/export is enabled):

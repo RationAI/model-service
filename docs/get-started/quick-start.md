@@ -63,7 +63,7 @@ To deploy the service, run Helm:
 helm upgrade --install <release-name> helm/rayservice -n rationai-jobs-ns
 ```
 
-In this command, `<release-name>` is the Helm release name parameter. Change it to your own release name (for example `<release-name>-my-model`) to run parallel test deployments.
+Use a dedicated test release name (for example `rayservice-model-my-model`) so test actions do not affect the main deployment.
 
 This command automates the deployment process by compiling your Helm templates and applying the final manifest to the Kubernetes cluster.
 
@@ -127,9 +127,11 @@ When you are finished, delete the deployment to free up cluster resources:
 helm uninstall <release-name> -n rationai-jobs-ns
 ```
 
+This removes only your selected `<release-name>` test deployment.
+
 ---
 
-## Next Steps
+## Related Guides
 
 - To deploy your own custom Python model, see [Adding New Models](../guides/adding-models.md).
 - To configure scaling or memory settings, read the [Configuration Reference](../guides/configuration-reference.md).

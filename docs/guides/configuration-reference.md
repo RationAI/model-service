@@ -89,6 +89,17 @@ Practical guidance:
 
 Worker groups are defined under `helm/rayservice/workers/` and referenced by chart values.
 
+### Default Worker Profiles (Recommended)
+
+For most use cases, keep the chart defaults and only tune application/deployment-level settings.
+
+- `cpu-workers`: default CPU worker profile.
+- `mig20-workers`: default GPU worker profile (MIG 2g.20gb).
+
+These defaults are selected in `helm/rayservice/values.yaml` and rendered from `helm/rayservice/workers/*.yaml`.
+
+Customize worker templates only when you need specific resources or scheduling behavior (for example different GPU class, memory envelope, node selectors, tolerations, or custom network/proxy constraints).
+
 Example worker group:
 
 ```yaml
@@ -113,17 +124,7 @@ Sizing rule of thumb:
 
 - Physical pod limits in Kubernetes must exceed total logical actor reservations plus Ray overhead.
 
-## 5. Deploy Command
-
-Deploy or update with Helm:
-
-```bash
-helm upgrade --install <release-name> helm/rayservice -n rationai-jobs-ns
-```
-
-In this command, `<release-name>` is the Helm release name parameter. You can change it (for example `<release-name>-my-model`) to run isolated test releases.
-
-## 6. Working Directory Cache Note
+## 5. Working Directory Cache Note
 
 Ray caches `runtime_env.working_dir` by URL string. If code was updated but URL is unchanged, an older cached snapshot may be reused.
 

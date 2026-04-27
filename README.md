@@ -36,14 +36,16 @@ Full walkthrough: `docs/get-started/quick-start.md`.
 ### Deploy
 
 ```bash
-helm upgrade --install rayservice-model helm/rayservice -n [namespace]
-kubectl get rayservice rayservice-model -n [namespace]
+helm upgrade --install <release-name> helm/rayservice -n <namespace>
+kubectl get rayservice <release-name> -n <namespace>
 ```
+
+Use a dedicated test release name (for example `rayservice-model-my-model`) so local testing actions do not affect a shared main deployment.
 
 ### Access locally
 
 ```bash
-kubectl port-forward -n [namespace] svc/rayservice-model-serve-svc 8000:8000
+kubectl port-forward -n <namespace> svc/<release-name>-serve-svc 8000:8000
 ```
 
 ### Test the reference model (`BinaryClassifier`)
@@ -82,6 +84,12 @@ resp = requests.post(
 )
 resp.raise_for_status()
 print(resp.json() if resp.headers.get("content-type", "").startswith("application/json") else resp.text)
+```
+
+### Clean up
+
+```bash
+helm uninstall <release-name> -n <namespace>
 ```
 
 ## Support

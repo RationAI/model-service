@@ -6,16 +6,11 @@ This page lists the most common issues when deploying and running models in Mode
 
 Start here before digging deeper:
 
-Use your RayService name from the Helm install (e.g. `rayservice-model`) in the commands below.
-In examples, set it once as:
-
-```bash
-RAYSERVICE_NAME=rayservice-model
-```
+Use your RayService name from the Helm install (preferably a dedicated test release, e.g. `rayservice-model-<test>`) in the commands below.
 
 ```bash
 kubectl get rayservice -n rationai-jobs-ns
-kubectl describe rayservice $RAYSERVICE_NAME -n rationai-jobs-ns
+kubectl describe rayservice <release-name> -n rationai-jobs-ns
 kubectl get pods -n rationai-jobs-ns
 ```
 
@@ -37,13 +32,13 @@ Ray Serve could not start the application or deployment. The root cause is typic
 1. Describe the RayService for events:
 
 ```bash
-kubectl describe rayservice $RAYSERVICE_NAME -n rationai-jobs-ns
+kubectl describe rayservice <release-name> -n rationai-jobs-ns
 ```
 
 2. Open the Ray dashboard (helps with Serve deployment errors):
 
 ```bash
-kubectl port-forward -n rationai-jobs-ns svc/${RAYSERVICE_NAME}-head-svc 8265:8265
+kubectl port-forward -n rationai-jobs-ns svc/<release-name>-head-svc 8265:8265
 ```
 
 Visit `http://localhost:8265`.
@@ -195,19 +190,24 @@ ray_actor_options:
 ## Code Updates Not Applying (Working Dir Cache)
 
 ### Symptoms
+
 - You updated your model Python code, pushed it to GitHub, and ran `helm upgrade`, but Ray keeps employing the old logic or throws errors that were already fixed.
 
 ### Cause
-Ray downloads the source code defined in `working_dir`: `https://github.com/.../main.zip` and saves it strictly based on the URL string constraint. If the URL hasn't changed, Ray Serve will NOT re-download the archive, effectively clinging to an old snapshot. 
+
+Ray downloads the source code defined in `working_dir`: `https://github.com/.../main.zip` and saves it strictly based on the URL string constraint. If the URL hasn't changed, Ray Serve will NOT re-download the archive, effectively clinging to an old snapshot.
 
 ### Fix
+
 Append a cache buster query parameter directly to your `working_dir` setup:
+
 ```yaml
 runtime_env:
   config:
     setup_timeout_seconds: 1800
   working_dir: https://github.com/RationAI/model-service/archive/refs/heads/main.zip?v=1
 ```
+
 Whenever you push subsequent revisions, just manually bump the `v=1` to `v=2`. During the next Helm deployment process, Ray evaluates the URL as new, retrieves the fresh code zip, and deploys successfully.
 
 ## Helpful Commands
@@ -218,5 +218,5 @@ kubectl get rayservice -n rationai-jobs-ns
 kubectl get svc -n rationai-jobs-ns
 
 # see all pods for a RayService
-kubectl get pods -n rationai-jobs-ns -l ray.io/cluster=$RAYSERVICE_NAME
+kubectl get pods -n rationai-jobs-ns -l ray.io/cluster=<release-name>
 ```

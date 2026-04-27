@@ -74,15 +74,10 @@ def __init__(self):
     print("Model loaded successfully")
 ```
 
-Lifecycle Notes
+### Lifecycle Notes
 
-`__init__` (Startup Phase)
-Used for lightweight setup, such as detecting the compute device (CUDA vs. CPU).
-This allows replicas to register with the controller quickly.
-
-**reconfigure** (Runtime Phase)
-Called automatically during startup and whenever user_config changes (e.g., via Helm).
-Handles heavier tasks like downloading model weights and initializing models.
+- `__init__` (Startup Phase): Used for lightweight setup, such as detecting the compute device (CUDA vs. CPU). This allows replicas to register with the controller quickly.
+- `reconfigure` (Runtime Phase): Called automatically during startup and whenever `user_config` changes (e.g., via Helm). Handles heavier tasks like downloading model weights and initializing models.
 
 ### 3. Micro-batching (@serve.batch)
 
@@ -360,7 +355,7 @@ Deploy your model:
 helm upgrade --install <release-name> helm/rayservice -n rationai-jobs-ns
 ```
 
-In this command, `<release-name>` is the Helm release name parameter. Change it if you want a different release name.
+In this command, `<release-name>` is your Helm release name. Use a dedicated test name (for example `rayservice-model-my-model`) to avoid touching shared deployments.
 
 Monitor deployment:
 
@@ -387,7 +382,7 @@ Then visit `http://127.0.0.1:8265`.
 6. **Batching**: Use batching for throughput-intensive workloads
 7. **Health Checks**: Implement health check endpoints for monitoring
 
-## Next Steps
+## Related Guides
 
 - [Deployment guide](deployment-guide.md)
 - [Configuration reference](configuration-reference.md)
