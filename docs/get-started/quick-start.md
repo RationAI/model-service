@@ -118,7 +118,7 @@ To communicate with the model from your local machine, forward the Serve port:
 kubectl port-forward -n rationai-jobs-ns svc/<release-name>-serve-svc 8000:8000
 ```
 
-You can now send HTTP requests to `http://localhost:8000/prostate-classifier-1`.
+You can now send HTTP requests to `http://localhost:8000/prostate-classifier-1/`.
 
 ---
 
