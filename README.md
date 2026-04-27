@@ -99,7 +99,7 @@ helm uninstall <release-name> -n <namespace>
 
 ## License
 
-This project is part of the RationAI infrastructure and is available for use by authorized members of the RationAI group.
+This project is licensed under the MIT License. See the `LICENSE` file for details.
 
 ## Authors
 
