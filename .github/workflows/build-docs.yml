@@ -5,11 +5,17 @@ on:
     branches: ["main"]
     paths:
       - "docs/**"
+      - "mkdocs.yml"
+      - "pyproject.toml"
+      - "uv.lock"
       - ".github/workflows/build-docs.yml"
   pull_request:
     branches: ["main"]
     paths:
       - "docs/**"
+      - "mkdocs.yml"
+      - "pyproject.toml"
+      - "uv.lock"
       - ".github/workflows/build-docs.yml"
 
 jobs:

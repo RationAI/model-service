@@ -5,13 +5,14 @@ edit_uri: edit/main/docs/
 
 theme:
   name: material
+  icon:
+    repo: fontawesome/brands/github
   palette:
     primary: indigo
     accent: indigo
   features:
     - navigation.tabs
     - navigation.sections
-    - toc.integrate
     - search.suggest
     - search.highlight
     - content.code.copy

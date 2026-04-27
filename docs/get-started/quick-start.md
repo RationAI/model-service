@@ -42,6 +42,8 @@ Let's look at a sample application definition (e.g. `helm/rayservice/application
 - name: prostate-classifier-1
   import_path: models.binary_classifier:app
   route_prefix: /prostate-classifier-1
+  runtime_env:
+    working_dir: https://github.com/RationAI/model-service/archive/refs/heads/main.zip
   # ...
 ```
 
@@ -50,6 +52,7 @@ Let's look at a sample application definition (e.g. `helm/rayservice/application
 - `name`: Logical app name (visible in the Ray dashboard and logs).
 - `import_path`: Python entrypoint (`module.path:variable`).
 - `route_prefix`: HTTP path under the Serve gateway.
+- `runtime_env.working_dir`: Git ZIP URL Ray downloads before startup. It must point to committed and pushed code.
 
 For your first deployment, we will use the existing configuration without changes.
 

@@ -2,297 +2,147 @@
 
 This guide explains how to integrate your own machine learning models into Model Service.
 
-## Overview
+## Start Here: Reuse Existing Implementations
 
-To add a new model, you need to:
+Before writing a model from scratch, start from the closest existing implementation:
 
-1. Prepare your model in ONNX format for better inference performance ([Model Export Guide](https://youtrack.rationai.cloud.e-infra.cz/articles/DEV-A-15/Model-Export))
-2. Create a model class with Ray Serve decorators
-3. Implement the inference logic
-4. Configure the model in `helm/rayservice/applications/`
-5. Deploy and test
+- **Binary classification**: [`models/binary_classifier.py`](https://github.com/RationAI/model-service/blob/main/models/binary_classifier.py)
+- **Semantic segmentation**: [`models/semantic_segmentation.py`](https://github.com/RationAI/model-service/blob/main/models/semantic_segmentation.py)
+- **Virchow2 embedding/classification**: [`models/virchow2.py`](https://github.com/RationAI/model-service/blob/main/models/virchow2.py)
+- **Heatmap pipeline**: [`builders/heatmap_builder.py`](https://github.com/RationAI/model-service/blob/main/builders/heatmap_builder.py)
 
-## Model Implementation
+Matching application definitions are in `helm/rayservice/applications/` and are usually the fastest way to bootstrap a new model route.
 
-### Basic Structure
+## Recommended Workflow (Step by Step)
 
-Create a Python file in the `models/` directory:
+1. **Choose a base implementation**
+   Copy the closest model class and adapt only model-specific logic first.
 
-```python
-from fastapi import FastAPI, Request
-from ray import serve
+2. **Export your model to ONNX**
+   To achieve the best inference performance, export your model to ONNX format. It is **critical** to define dynamic axes for the batch dimension so the model can accept variable-sized batches from `@serve.batch`. Here is a complete example of loading a model checkpoint via MLflow and exporting it properly:
 
-app_ingress = FastAPI()
+   ```python
+   import mlflow
+   import mlflow.artifacts
+   import torch
 
-@serve.deployment(ray_actor_options={"num_cpus": 2})
-@serve.ingress(app_ingress)
-class MyModel:
-    def __init__(self):
-        # Load your model here
-        pass
+   model = Model()
+   path = mlflow.artifacts.download_artifacts(
+       ".../checkpoint.ckpt"
+   )
 
-    @app_ingress.post("/")
-    async def predict(self, request: Request):
-        # Handle inference requests
-        data = await request.json()
-        # Process data and return prediction
-        result = data
-        return {"prediction": result}
+   model.load_state_dict(torch.load(path)["state_dict"])
+   model.eval()
 
-app = MyModel.bind()
-```
+   torch.onnx.export(
+       model,
+       torch.randn(1, 3, 512, 512),  # model input (or a tuple for multiple inputs)
+       "model.onnx",                 # where to save the model (can be a file or file-like object)
+       export_params=True,           # store the trained parameter weights inside the model file
+       do_constant_folding=True,     # whether to execute constant folding for optimization
+       input_names=["input"],        # the model's input names
+       output_names=["output"],      # the model's output names
+       dynamic_axes={
+           "input": {0: "batch_size"},  # variable length axes required for @serve.batch
+           "output": {0: "batch_size"},
+       },
+   )
+   ```
 
-The repository's reference model `BinaryClassifier` uses FastAPI ingress + batched inference and expects a **compressed binary payload** (not JSON). For simple JSON models, the examples above are fine; for high-throughput image inference, consider the batching and ingress patterns shown below.
+3. **Implement or adapt the Python entrypoint**
+   Keep Ray Serve structure (`@serve.deployment`, `@serve.ingress`, optional `reconfigure`) and align request/response format with your target workload.
 
-## Key Components
+4. **Add/update application YAML in Helm**
+   Add a file in `helm/rayservice/applications/` with your `import_path`, `route_prefix`, and `runtime_env.working_dir`.
 
-### 1. Deployment Decorator
+5. **Deploy to a dedicated test release**
+   Use a dedicated `<release-name>` for isolation during development.
 
-The `@serve.deployment` decorator marks your class as a Ray Serve deployment:
+6. **Validate and iterate**
+   Test endpoint behavior, check RayService status, inspect worker/head logs, then tune autoscaling/resources.
 
-```python
-@serve.deployment(num_replicas="auto")
-@serve.ingress(fastapi)
-class MyModel:
-    # Ray Serve manages the actor lifecycle and scaling
-    # FastAPI handles the HTTP interface and request routing
-    ...
-```
+For detailed deployment procedure, continue with [Deployment Guide](deployment-guide.md). For scaling/resource tuning, use [Configuration Reference](configuration-reference.md). For runtime failure diagnosis, use [Troubleshooting](troubleshooting.md).
 
-### 2. Initialization
+## Model Implementation Reference
 
-Load your model in `__init__`. This method corresponds to the replica startup phase.
+Instead of writing boilerplate from scratch, you should leverage the patterns already implemented in this repository.
 
-```python
-def __init__(self):
-    # This runs ONCE when the replica starts.
-    # The replica is NOT ready for traffic until this returns.
-    import torch
+### 1. The Deployment Contract
 
-    self.model = torch.load("model.pt")
-    self.model.eval()
-    print("Model loaded successfully")
-```
+All models in the service follow the same basic Ray Serve contract:
 
-### Lifecycle Notes
+- A class decorated with `@serve.deployment` (and optionally `@serve.ingress`).
+- An `__init__` method for one-time setup (like loading the ONNX session).
+- An optional `reconfigure` method for dynamic config updates.
+- An HTTP handling method (like `@app_ingress.post("/")`).
+- A bound application object at the end of the file (e.g., `app = MyModel.bind()`).
 
-- `__init__` (Startup Phase): Used for lightweight setup, such as detecting the compute device (CUDA vs. CPU). This allows replicas to register with the controller quickly.
-- `reconfigure` (Runtime Phase): Called automatically during startup and whenever `user_config` changes (e.g., via Helm). Handles heavier tasks like downloading model weights and initializing models.
+### 2. High-Performance Batching
 
-### 3. Micro-batching (@serve.batch)
+_Reference: [`models/binary_classifier.py`](https://github.com/RationAI/model-service/blob/main/models/binary_classifier.py)_
 
-To maximize GPU utilization, the service uses the `@serve.batch` decorator. Ray Serve buffers individual HTTP requests and passes them to the prediction method as a list. This allows the model to perform vectorized inference on batches, significantly increasing throughput.
+For high-throughput workloads (like pathology imaging), the reference models use:
 
-```python
-@serve.batch
-async def predict(self, inputs: list[torch.Tensor]) -> list[torch.Tensor]:
-    tensors = torch.stack(inputs).to(self.device)
+- **Micro-batching**: The `@serve.batch` decorator groups concurrent HTTP requests into a single NumPy/Tensor batch before passing them to the ONNX session.
+- **LZ4 Compression**: To minimize network overhead, requests and responses are sent as raw bytes compressed with LZ4. Decompression is offloaded to a separate thread using `asyncio.to_thread`.
+- **Header-driven metadata**: Custom HTTP headers (like `x-output-shape`) are used to pass metadata alongside the raw binary payloads.
 
-    dtype = torch.float16 if self.device.type == "cuda" else torch.bfloat16
+### 3. MLflow Integration
 
-    with torch.inference_mode(), torch.autocast(device_type=self.device.type, dtype=dtype):
-        output = self.model(tensors)
+_Reference: [`providers/model_provider.py`](https://github.com/RationAI/model-service/blob/main/providers/model_provider.py)_
 
-    return list(output)
-```
+You do not need to hardcode model paths or write custom download logic. The service includes an MLflow provider.
 
-### 4. High-Performance Request Handling
-
-The root endpoint is optimized for high-throughput binary workloads (e.g., pathology imaging):
-
-**Offloaded Decompression**
-LZ4 decompression runs in a separate thread using asyncio.to_thread, keeping the event loop responsive.
-
-**Header-Driven Logic**
-Clients use custom headers such as x-pool-tokens or x-output-dtype to control post-processing and output precision.
-
-**Compressed Egress**
-Outputs are compressed using LZ4, and metadata such as tensor shape is passed via headers.
-
-```python
-@fastapi.post("/")
-async def root(self, request: Request) -> Response:
-    # 1. Async decompression of request body
-    data = await asyncio.to_thread(lz4.frame.decompress, await request.body())
-
-    # 2. Preprocessing and batch inference
-    tensor = self.transforms(Image.fromarray(image_np))
-    raw_output: torch.Tensor = await self.predict(tensor)
-
-    # 3. Serialize and compress response
-    return Response(
-        content=lz4.frame.compress(result.tobytes()),
-        headers={"x-output-shape": str(result.shape)},
-        media_type="application/octet-stream"
-    )
-```
-
-### Advanced Features
-
-#### Dynamic Configuration
-
-Use **reconfigure()** to update model settings without redeployment:
-
-```python
-from typing import TypedDict
-
-class Config(TypedDict):
-    threshold: float
-    batch_size: int
-
-@serve.deployment
-class ConfigurableModel:
-    def __init__(self):
-        self.model = load_model()
-
-    def reconfigure(self, config: Config):
-        self.threshold = config["threshold"]
-        self.batch_size = config["batch_size"]
-        print(f"Reconfigured: threshold={self.threshold}")
-```
-
-Update configuration via your model definition YAML:
+Pass the MLflow artifact URI through your application's `user_config` (in the Helm YAML):
 
 ```yaml
-- name: configurable-model
-  user_config:
-    threshold: 0.5
-    batch_size: 32
-```
-
-#### Batching Requests
-
-Example using @serve.batch with JSON input:
-
-```python
-app_ingress = FastAPI()
-
-@serve.deployment
-@serve.ingress(app_ingress)
-class BatchedModel:
-    def __init__(self):
-        self.model = load_model()
-
-    @serve.batch(max_batch_size=32, batch_wait_timeout_s=0.1)
-    async def predict_batch(self, inputs: list[np.ndarray]):
-        batch = np.stack(inputs)
-        outputs = self.model(batch)
-        return outputs.tolist()
-
-    @app_ingress.post("/")
-    async def process_request(self, request: Request):
-        data = await request.json()
-        input_data = np.array(data["input"])
-        result = await self.predict_batch(input_data)
-        return {"prediction": result}
-```
-
-For binary/image workloads, you can also batch raw bytes (as in BinaryClassifier). This avoids JSON overhead and allows dynamic batch control via user_config.
-
-#### Using FastAPI
-
-For advanced HTTP features, integrate FastAPI:
-
-```python
-from fastapi import FastAPI
-from pydantic import BaseModel
-
-class PredictionRequest(BaseModel):
-    input: list[float]
-
-class PredictionResponse(BaseModel):
-    prediction: float
-    confidence: float
-
-fastapi = FastAPI()
-
-@serve.deployment
-@serve.ingress(fastapi)
-class FastAPIModel:
-    def __init__(self):
-        self.model = load_model()
-
-    @fastapi.post("/predict", response_model=PredictionResponse)
-    async def predict(self, request: PredictionRequest):
-        output = self.model(request.input)
-        return PredictionResponse(
-            prediction=float(output),
-            confidence=0.95
-        )
-
-app = FastAPIModel.bind()
-```
-
-## Loading Models from MLflow
-
-Use the model provider to load from MLflow:
-
-```python
-# models/mlflow_model.py
-from fastapi import FastAPI, Request
-from ray import serve
-from providers.model_provider import mlflow
-
-app_ingress = FastAPI()
-
-@serve.deployment
-@serve.ingress(app_ingress)
-class MLflowModel:
-    def __init__(self):
-        # This will be set via user_config
-        self.model_path = None
-
-    async def reconfigure(self, config):
-        model_uri = config["model"]["artifact_uri"]
-        self.model_path = mlflow(artifact_uri=model_uri)
-
-        # Load model
-        import onnxruntime as ort
-        self.session = ort.InferenceSession(self.model_path)
-
-    @app_ingress.post("/")
-    async def predict(self, request: Request):
-        # Inference logic
-        ...
-
-app = MLflowModel.bind()
-```
-
-Configure in YAML:
-
-```yaml
-runtime_env:
-  env_vars:
-    MLFLOW_TRACKING_URI: http://mlflow.rationai-mlflow:5000
 user_config:
   model:
     artifact_uri: mlflow-artifacts:/65/abc123.../model.onnx
 ```
 
-## RayService Configuration
+Then in your model's `reconfigure` method, resolve it using the provider:
+
+```python
+from providers.model_provider import mlflow
+
+def reconfigure(self, config):
+    model_path = mlflow(artifact_uri=config["model"]["artifact_uri"])
+    self.session = ort.InferenceSession(model_path)
+```
+
+Make sure the cluster has the `MLFLOW_TRACKING_URI` environment variable set in `runtime_env.env_vars`.
+
+### 4. GPU Acceleration
+
+For GPU-accelerated deployments, ensure your YAML requests `num_gpus: 1` (or a fraction thereof) in `ray_actor_options`.
+
+When using ONNX Runtime, initialize the `TensorrtExecutionProvider` or `CUDAExecutionProvider` in your `__init__` or `reconfigure` method. Review the TensorRT optimization details in the [Deployment Guide](deployment-guide.md).
+
+## Helm Application Configuration
 
 Add your model file to `helm/rayservice/applications/my-model.yaml`:
 
 ```yaml
 - name: my-model
-    import_path: models.my_onnx_model:app
-    route_prefix: /my-model
-    runtime_env:
-        working_dir: https://github.com/RationAI/model-service/archive/refs/heads/your-feature-branch.zip
-        pip:
+  import_path: models.my_onnx_model:app
+  route_prefix: /my-model
+  runtime_env:
+    working_dir: https://github.com/RationAI/model-service/archive/refs/heads/your-feature-branch.zip
+    pip:
+      - onnxruntime>=1.23.2
+      - numpy
+  deployments:
+    - name: MyONNXModel
+      autoscaling_config:
+        min_replicas: 1
+        max_replicas: 4
+      ray_actor_options:
+        num_cpus: 2
+        memory: 4294967296 # 4 GiB
+        runtime_env:
+          pip:
             - onnxruntime>=1.23.2
-            - numpy
-    deployments:
-        - name: MyONNXModel
-            autoscaling_config:
-                min_replicas: 1
-                max_replicas: 4
-            ray_actor_options:
-                num_cpus: 2
-                memory: 4294967296 # 4 GiB
-                runtime_env:
-                    pip:
-                        - onnxruntime>=1.23.2
 ```
 
 In this repository, model dependencies can be installed under `deployments[*].ray_actor_options.runtime_env.pip` (not only at `runtime_env.pip` at application level). This is useful when different deployments need different dependencies.
@@ -319,59 +169,6 @@ Before running Helm, commit and push your new model code and application YAML to
 
 If Ray keeps using older code after a deploy, append a cache-busting query parameter to `working_dir` (for example `.../main.zip?v=2`) and deploy again.
 
-## GPU Models
-
-For GPU-accelerated models:
-
-```python
-@serve.deployment(ray_actor_options={"num_gpus": 1})
-@serve.ingress(app_ingress)
-class GPUModel:
-    def __init__(self):
-        import torch
-
-        self.device = torch.device("cuda")
-        self.model = torch.load("model.pt").to(self.device)
-        self.model.eval()
-
-    @app_ingress.post("/")
-    async def predict(self, request: Request):
-        data = await request.json()
-        input_tensor = torch.tensor(data["input"]).to(self.device)
-
-        with torch.no_grad():
-            output = self.model(input_tensor)
-
-        return {"prediction": output.cpu().numpy().tolist()}
-```
-
-Ensure your deployment specifies `num_gpus` greater than `0`. Model Service provides GPU worker definitions under `helm/rayservice/workers/`.
-
-## Deployment
-
-Deploy your model:
-
-```bash
-helm upgrade --install <release-name> helm/rayservice -n rationai-jobs-ns
-```
-
-In this command, `<release-name>` is your Helm release name. Use a dedicated test name (for example `rayservice-model-my-model`) to avoid touching shared deployments.
-
-Monitor deployment:
-
-```bash
-kubectl get rayservice -n rationai-jobs-ns
-kubectl logs -n rationai-jobs-ns -l ray.io/node-type=worker --tail=100
-```
-
-Open the Ray dashboard:
-
-```bash
-kubectl port-forward -n rationai-jobs-ns svc/<release-name>-head-svc 8265:8265
-```
-
-Then visit `http://127.0.0.1:8265`.
-
 ## Best Practices
 
 1. **Error Handling**: Always wrap inference in try-except blocks
@@ -384,6 +181,6 @@ Then visit `http://127.0.0.1:8265`.
 
 ## Related Guides
 
-- [Deployment guide](deployment-guide.md)
-- [Configuration reference](configuration-reference.md)
-- [Architecture overview](../architecture/overview.md)
+- [Deployment Guide](deployment-guide.md)
+- [Configuration Reference](configuration-reference.md)
+- [Architecture Overview](../architecture/overview.md)
