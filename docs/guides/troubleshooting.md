@@ -191,7 +191,7 @@ ray_actor_options:
 
 ### Symptoms
 
-- You updated your model Python code, pushed it to GitHub, and ran `helm upgrade`, but Ray keeps employing the old logic or throws errors that were already fixed.
+- You updated your model Python code, pushed it to GitHub, and ran `helm upgrade`, but Ray keeps deploying the old logic or throws errors that were already fixed.
 
 ### Cause
 
