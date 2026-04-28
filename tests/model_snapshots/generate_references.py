@@ -1,11 +1,17 @@
 import json
+import os
 from pathlib import Path
 
 import numpy as np
-from _shared import _client, _models_base_url, _read_tile
+from _shared import _read_tile
+from rationai import Client
 
 
 OUT_DIR = Path("/mnt/test_refs")
+MODELS_BASE_URL = os.environ.get(
+    "MODEL_SERVICE_MODELS_BASE_URL",
+    "http://rayservice-model-tests-serve-svc.rationai-jobs-ns.svc.cluster.local:8000",
+)
 
 CASES = [
     {
@@ -29,9 +35,9 @@ CASES = [
 
 def generate_references() -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    print(f"== Generating references to {OUT_DIR} via {_models_base_url()} ==")
+    print(f"== Generating references to {OUT_DIR} via {MODELS_BASE_URL} ==")
 
-    with _client(timeout_s=1200) as client:
+    with Client(models_base_url=MODELS_BASE_URL, timeout=1200) as client:
         for case in CASES:
             label, model_id, mtype = case["label"], case["model_id"], case["type"]
             print(f"\n[{label}] {model_id} ({mtype})")

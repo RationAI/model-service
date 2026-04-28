@@ -7,6 +7,8 @@ from time import perf_counter
 import numpy as np
 import pytest
 from numpy.typing import NDArray
+from rationai import Client
+from ratiopath.openslide import OpenSlide
 
 
 def _models_base_url() -> str:
@@ -16,20 +18,7 @@ def _models_base_url() -> str:
     )
 
 
-def _client(timeout_s: float = 1200.0):
-    try:
-        from rationai import Client
-    except ImportError:
-        pytest.skip("Python package `rationai` is not installed.")
-    return Client(models_base_url=_models_base_url(), timeout=timeout_s)
-
-
 def _read_tile(slide_path: str, tile_size: int, level: int) -> NDArray[np.uint8]:
-    try:
-        from ratiopath.openslide import OpenSlide
-    except ImportError:
-        pytest.skip("Python package `ratiopath` is not installed.")
-
     with OpenSlide(slide_path) as slide:
         w, h = slide.level_dimensions[level]
         x = max(0, (w - tile_size) // 2)
@@ -37,7 +26,6 @@ def _read_tile(slide_path: str, tile_size: int, level: int) -> NDArray[np.uint8]
         tile = slide.read_region_relative(
             (x, y), level, (tile_size, tile_size)
         ).convert("RGB")
-
     return np.asarray(tile, dtype=np.uint8)
 
 
@@ -52,7 +40,7 @@ def run_binary_classifier_case(
 ) -> None:
     tile = _read_tile(slide_path, tile_size, level)
 
-    with _client(timeout_s) as client:
+    with Client(models_base_url=_models_base_url(), timeout=timeout_s) as client:
         t0 = perf_counter()
         actual_score = float(client.models.classify_image(model=model_id, image=tile))
         elapsed = perf_counter() - t0
@@ -83,7 +71,7 @@ def run_semantic_segmentation_case(
     tile = _read_tile(slide_path, tile_size, level)
     expected = np.load(expected_array_path)
 
-    with _client(timeout_s) as client:
+    with Client(models_base_url=_models_base_url(), timeout=timeout_s) as client:
         t0 = perf_counter()
         actual = np.asarray(client.models.segment_image(model=model_id, image=tile))
         elapsed = perf_counter() - t0
