@@ -20,7 +20,7 @@ class TestRunner:
 
     def _model_statuses(self) -> str:
         try:
-            resp = requests.get("http://localhost:52365/api/serve/applications/")
+            resp = requests.get("http://localhost:8265/api/serve/applications/")
             resp.raise_for_status()
             data = resp.json()
             lines = ["Model statuses:"]
