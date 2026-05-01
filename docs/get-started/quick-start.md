@@ -29,8 +29,10 @@ cd model-service
 ```
 
 ---
+## Step 2: Add your model code
+If you want to deploy your own model, start by adding the model code and Ray Serve application entry point. Follow the [Adding New Models](../guides/adding-models.md) guide for a step-by-step walkthrough of this process.
 
-## Step 2: Review the Configuration
+## Step 3: Review the Configuration
 
 In Model Service, configurations are managed using **Helm**. The environment configuration is split into values and applications inside the `helm/rayservice/` directory.
 
@@ -58,7 +60,7 @@ For your first deployment, we will use the existing configuration without change
 
 ---
 
-## Step 3: Deploy the service
+## Step 4: Deploy the service
 
 To deploy the service, run Helm:
 
@@ -76,7 +78,7 @@ If you changed or added an application definition that points `runtime_env.worki
 
 ---
 
-## Step 4: Monitor the deployment
+## Step 5: Monitor the deployment
 
 Deploying models takes time as the cluster downloads images and starts worker pods.
 
@@ -110,7 +112,7 @@ Open a web browser and navigate to `http://127.0.0.1:8265`. Your models are read
 
 ---
 
-## Step 5: Send a request
+## Step 6: Send a request
 
 To communicate with the model from your local machine, forward the Serve port:
 
@@ -122,7 +124,7 @@ You can now send HTTP requests to `http://localhost:8000/prostate-classifier-1/`
 
 ---
 
-## Step 6: Clean up
+## Step 7: Clean up
 
 When you are finished, delete the deployment to free up cluster resources:
 

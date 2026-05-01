@@ -103,6 +103,8 @@ resp.raise_for_status()
 print(resp.text)
 ```
 
+Additionally, you can use the SDK client to send requests with the same payload format as your application expects.
+
 ## Step 6: Update Safely
 
 ### Update code

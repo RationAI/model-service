@@ -79,22 +79,73 @@ def reconfigure(self, config: Config) -> None:
 
 ### Where to Put the Cache Path in Helm
 
-Store the cache path in a shared location that persists across pod restarts:
+Store the cache path in a shared location that persists across pod restarts.
+
+**Option 1: Use an emptyDir volume (data lost on pod restart)**
+
+In your application YAML in `helm/rayservice/applications/`, set the environment variable:
 
 ```yaml
-ray_actor_options:
-  runtime_env:
-    env_vars:
-      TRT_CACHE_PATH: /data/trt-cache
-  volumes:
-    - name: trt-cache
-      emptyDir: {}
-volumes:
-  - name: trt-cache
-    mountPath: /data/trt-cache
+deployments:
+  - name: BinaryClassifier
+    ray_actor_options:
+      runtime_env:
+        env_vars:
+          TRT_CACHE_PATH: /data/trt-cache
 ```
 
-Or use a PersistentVolumeClaim for true persistence across pod recreations.
+Then add volume mounting to your worker group in `helm/rayservice/values.yaml`:
+
+```yaml
+rayClusterConfig:
+  workerGroupSpecs:
+    - groupName: gpu-group
+      rayStartParams:
+        num-gpus: 1
+      template:
+        spec:
+          containers:
+            - name: ray-worker
+              volumeMounts:
+                - name: trt-cache
+                  mountPath: /data/trt-cache
+          volumes:
+            - name: trt-cache
+              emptyDir: {}
+```
+
+**Option 2: Use a PersistentVolumeClaim (data persists across restarts)**
+
+For production, use a PVC to ensure TensorRT engines persist:
+
+```yaml
+# In worker group template
+volumeMounts:
+  - name: trt-cache
+    mountPath: /data/trt-cache
+volumes:
+  - name: trt-cache
+    persistentVolumeClaim:
+      claimName: trt-cache-pvc
+```
+
+Create the PVC separately (or reference an existing one):
+
+```yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: trt-cache-pvc
+  namespace: rationai-jobs-ns
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+```
+
+Once a TensorRT engine is built and cached, subsequent pod restarts will reuse it, avoiding the 1–5 minute compilation overhead.
 
 ### First Run Overhead
 

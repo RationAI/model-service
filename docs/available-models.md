@@ -55,41 +55,33 @@ A processing pipeline element for aggregating inferences into spatial heatmaps.
 
 ## SDK Integration Patterns
 
-When writing functions for the SDK to interact with these models, use the following patterns for data serialization and deserialization.
+The RationAI SDK provides convenient methods for interacting with each model type. All image data is automatically compressed with LZ4 before transmission, and responses are automatically decompressed.
 
-### Preparing the Input (SDK side)
+### Using the RationAI Client
 
-Data sent to models should be a flat byte buffer compressed with `lz4`.
-
-```python
-import lz4.frame
-import requests
-import numpy as np
-
-def call_model(endpoint_url: str, tile: np.ndarray) -> bytes:
-    # 1. Ensure the tile is in the correct format (e.g., uint8)
-    tile_bytes = tile.tobytes()
-
-    # 2. Compress the byte buffer
-    compressed_payload = lz4.frame.compress(tile_bytes)
-
-    # 3. Send the POST request
-    response = requests.post(endpoint_url, data=compressed_payload)
-    response.raise_for_status()
-
-    return response.content
-```
-
-### Parsing the Output (SDK side)
-
-For models that return raw floats (like `binary_classifier`), standard HTTP responses can be cast. For models returning compressed arrays (like `semantic_segmentation`), you must reverse the process:
+Initialize the client and call model methods:
 
 ```python
-def parse_segmentation_response(response_bytes: bytes, shape: tuple) -> np.ndarray:
-    # 1. Decompress the response
-    decompressed_data = lz4.frame.decompress(response_bytes)
+from rationai import Client
+from PIL import Image
 
-    # 2. Reconstruct the array (e.g., float16)
-    array = np.frombuffer(decompressed_data, dtype=np.float16)
-    return array.reshape(shape)
+client = Client()
+image = Image.open("tissue_sample.tiff")
+
+# Binary classification
+score = client.models.classify_image("prostate-classifier-1", image)
+print(f"Classification score: {score}")
+
+# Semantic segmentation
+segmentation = client.models.segment_image("episeg-1", image)
+print(f"Segmentation shape: {segmentation.shape}")  # (num_classes, height, width)
+
+# Embedding with custom options
+embedding = client.models.embed_image(
+    "virchow2", 
+    image, 
+    output_dtype=np.float16,
+    pool_tokens=False
+)
+print(f"Embedding shape: {embedding.shape}")
 ```

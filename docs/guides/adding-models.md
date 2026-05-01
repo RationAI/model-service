@@ -72,8 +72,6 @@ def __init__(self) -> None:
   self.lz4 = lz4.frame
 ```
 
-What each line does:
-
 - `import lz4.frame`: imports compression utilities once for this replica.
 - `self.lz4 = lz4.frame`: stores a reusable handle so request handlers do not re-import.
 
