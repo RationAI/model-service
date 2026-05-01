@@ -1,186 +1,187 @@
 # Adding New Models
 
-This guide explains how to integrate your own machine learning models into Model Service.
+This guide covers the full model preparation path before deployment: export the model to ONNX, store it in MLflow, and then implement the Python entrypoint that Ray Serve will load.
 
-## Start Here: Reuse Existing Implementations
+If you are adding a new model from scratch, start here first. Once the Python file is ready, continue with the [Deployment Guide](deployment-guide.md) for Helm configuration, deploy, and rollout monitoring.
 
-Before writing a model from scratch, start from the closest existing implementation:
+## Export the Model to ONNX
 
-- **Binary classification**: [`models/binary_classifier.py`](https://github.com/RationAI/model-service/blob/main/models/binary_classifier.py)
+Export your model to ONNX before writing the Serve entrypoint. The project expects ONNX so the runtime can load the artifact efficiently and use batching through `@serve.batch`.
+
+If you already have a conversion script, reuse it here. Make sure the exported graph accepts a batch dimension, because the Ray Serve handler will batch multiple requests together.
+
+```python
+import torch
+
+model = Model()
+model.eval()
+
+torch.onnx.export(
+  model,
+  torch.randn(1, 3, 512, 512),
+  "model.onnx",
+  export_params=True,
+  do_constant_folding=True,
+  input_names=["input"],
+  output_names=["output"],
+  dynamic_axes={
+    "input": {0: "batch_size"},
+    "output": {0: "batch_size"},
+  },
+)
+```
+
+If the exported model is too large and ONNX splits it into multiple files, see [Troubleshooting: Large ONNX Model Export](troubleshooting.md#large-onnx-model-export-2gb) for merge and multi-file handling.
+
+## Upload the ONNX Artifact to MLflow
+
+After export, upload the ONNX artifact to MLflow. If the export produced external weight files, upload the whole directory instead of only the `.onnx` graph file.
+
+```python
+import mlflow
+
+with mlflow.start_run():
+  mlflow.log_artifact("model.onnx", artifact_path="model")
+
+  # If the export is split into multiple files, upload the full directory:
+  # mlflow.log_artifacts("onnx_export_dir", artifact_path="model")
+```
+
+The deployment guide explains how the runtime reads this artifact back during startup.
+
+## Start With an Existing Implementation
+
+Do not start from an empty file. Copy the closest implementation and adapt only model-specific pieces.
+
+- **Binary classification (baseline)**: [`models/binary_classifier.py`](https://github.com/RationAI/model-service/blob/main/models/binary_classifier.py)
 - **Semantic segmentation**: [`models/semantic_segmentation.py`](https://github.com/RationAI/model-service/blob/main/models/semantic_segmentation.py)
 - **Virchow2 embedding/classification**: [`models/virchow2.py`](https://github.com/RationAI/model-service/blob/main/models/virchow2.py)
 - **Heatmap pipeline**: [`builders/heatmap_builder.py`](https://github.com/RationAI/model-service/blob/main/builders/heatmap_builder.py)
 
-Matching application definitions are in `helm/rayservice/applications/` and are usually the fastest way to bootstrap a new model route.
+Matching application definitions live in `helm/rayservice/applications/`, but the YAML itself is covered in the [Deployment Guide](deployment-guide.md).
 
-## Recommended Workflow (Step by Step)
+## Python Entrypoint
 
-1. **Choose a base implementation**
-   Copy the closest model class and adapt only model-specific logic first.
+Create a new file in `models/` (for example `models/my_model.py`). The sections below explain what each method does and what belongs inside it.
 
-2. **Export your model to ONNX**
-   To achieve the best inference performance, export your model to ONNX format. It is **critical** to define dynamic axes for the batch dimension so the model can accept variable-sized batches from `@serve.batch`. Here is a complete example of loading a model checkpoint via MLflow and exporting it properly:
-
-   ```python
-   import mlflow
-   import mlflow.artifacts
-   import torch
-
-   model = Model()
-   path = mlflow.artifacts.download_artifacts(
-       ".../checkpoint.ckpt"
-   )
-
-   model.load_state_dict(torch.load(path)["state_dict"])
-   model.eval()
-
-   torch.onnx.export(
-       model,
-       torch.randn(1, 3, 512, 512),  # model input (or a tuple for multiple inputs)
-       "model.onnx",                 # where to save the model (can be a file or file-like object)
-       export_params=True,           # store the trained parameter weights inside the model file
-       do_constant_folding=True,     # whether to execute constant folding for optimization
-       input_names=["input"],        # the model's input names
-       output_names=["output"],      # the model's output names
-       dynamic_axes={
-           "input": {0: "batch_size"},  # variable length axes required for @serve.batch
-           "output": {0: "batch_size"},
-       },
-   )
-   ```
-
-3. **Implement or adapt the Python entrypoint**
-   Keep Ray Serve structure (`@serve.deployment`, `@serve.ingress`, optional `reconfigure`) and align request/response format with your target workload.
-
-4. **Add/update application YAML in Helm**
-   Add a file in `helm/rayservice/applications/` with your `import_path`, `route_prefix`, and `runtime_env.working_dir`.
-
-5. **Deploy to a dedicated test release**
-   Use a dedicated `<release-name>` for isolation during development.
-
-6. **Validate and iterate**
-   Test endpoint behavior, check RayService status, inspect worker/head logs, then tune autoscaling/resources.
-
-For detailed deployment procedure, continue with [Deployment Guide](deployment-guide.md). For scaling/resource tuning, use [Configuration Reference](configuration-reference.md). For runtime failure diagnosis, use [Troubleshooting](troubleshooting.md).
-
-## Model Implementation Reference
-
-Instead of writing boilerplate from scratch, you should leverage the patterns already implemented in this repository.
-
-### 1. The Deployment Contract
-
-All models in the service follow the same basic Ray Serve contract:
-
-- A class decorated with `@serve.deployment` (and optionally `@serve.ingress`).
-- An `__init__` method for one-time setup (like loading the ONNX session).
-- An optional `reconfigure` method for dynamic config updates.
-- An HTTP handling method (like `@app_ingress.post("/")`).
-- A bound application object at the end of the file (e.g., `app = MyModel.bind()`).
-
-### 2. High-Performance Batching
-
-_Reference: [`models/binary_classifier.py`](https://github.com/RationAI/model-service/blob/main/models/binary_classifier.py)_
-
-For high-throughput workloads (like pathology imaging), the reference models use:
-
-- **Micro-batching**: The `@serve.batch` decorator groups concurrent HTTP requests into a single NumPy/Tensor batch before passing them to the ONNX session.
-- **LZ4 Compression**: To minimize network overhead, requests and responses are sent as raw bytes compressed with LZ4. Decompression is offloaded to a separate thread using `asyncio.to_thread`.
-- **Header-driven metadata**: Custom HTTP headers (like `x-output-shape`) are used to pass metadata alongside the raw binary payloads.
-
-### 3. MLflow Integration
-
-_Reference: [`providers/model_provider.py`](https://github.com/RationAI/model-service/blob/main/providers/model_provider.py)_
-
-You do not need to hardcode model paths or write custom download logic. The service includes an MLflow provider.
-
-Pass the MLflow artifact URI through your application's `user_config` (in the Helm YAML):
-
-```yaml
-user_config:
-  model:
-    artifact_uri: mlflow-artifacts:/65/abc123.../model.onnx
-```
-
-Then in your model's `reconfigure` method, resolve it using the provider:
+### `__init__`: one-time lightweight setup
 
 ```python
-from providers.model_provider import mlflow
-
-def reconfigure(self, config):
-    model_path = mlflow(artifact_uri=config["model"]["artifact_uri"])
-    self.session = ort.InferenceSession(model_path)
+def __init__(self) -> None:
+  import lz4.frame
+  self.lz4 = lz4.frame
 ```
 
-Make sure the cluster has the `MLFLOW_TRACKING_URI` environment variable set in `runtime_env.env_vars`.
+What each line does:
 
-### 4. GPU Acceleration
+- `import lz4.frame`: imports compression utilities once for this replica.
+- `self.lz4 = lz4.frame`: stores a reusable handle so request handlers do not re-import.
 
-For GPU-accelerated deployments, ensure your YAML requests `num_gpus: 1` (or a fraction thereof) in `ray_actor_options`.
+What belongs in `__init__`:
 
-When using ONNX Runtime, initialize the `TensorrtExecutionProvider` or `CUDAExecutionProvider` in your `__init__` or `reconfigure` method. Review the TensorRT optimization details in the [Deployment Guide](deployment-guide.md).
+- lightweight constants,
+- reusable helpers,
+- cheap setup only.
 
-## Helm Application Configuration
+What should not be here:
 
-Add your model file to `helm/rayservice/applications/my-model.yaml`:
+- heavy model download,
+- config-dependent initialization.
 
-```yaml
-- name: my-model
-  import_path: models.my_onnx_model:app
-  route_prefix: /my-model
-  runtime_env:
-    working_dir: https://github.com/RationAI/model-service/archive/refs/heads/your-feature-branch.zip
-    pip:
-      - onnxruntime>=1.23.2
-      - numpy
-  deployments:
-    - name: MyONNXModel
-      autoscaling_config:
-        min_replicas: 1
-        max_replicas: 4
-      ray_actor_options:
-        num_cpus: 2
-        memory: 4294967296 # 4 GiB
-        runtime_env:
-          pip:
-            - onnxruntime>=1.23.2
+### `reconfigure`: required runtime initialization
+
+`reconfigure` is called after startup and on `user_config` changes. In this project, treat it as required because model path and runtime settings come from config.
+
+```python
+def reconfigure(self, config: Config) -> None:
+  import importlib
+  import onnxruntime as ort
+
+  self.tile_size = config["tile_size"]
+
+  model_config = dict(config["model"])
+  module_path, attr_name = model_config.pop("_target_").split(":")
+  provider = getattr(importlib.import_module(module_path), attr_name)
+
+  self.session = ort.InferenceSession(
+    provider(**model_config),
+    providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
+  )
+
+  self.input_name = self.session.get_inputs()[0].name
+  self.output_name = self.session.get_outputs()[0].name
+
+  self.predict.set_max_batch_size(config["max_batch_size"])
+  self.predict.set_batch_wait_timeout_s(config["batch_wait_timeout_s"])
 ```
 
-In this repository, model dependencies can be installed under `deployments[*].ray_actor_options.runtime_env.pip` (not only at `runtime_env.pip` at application level). This is useful when different deployments need different dependencies.
+For TensorRT, mixed precision, and other runtime tuning options, see [Optimization Guide](optimization-guide.md).
 
-Helm automatically renders all files from `helm/rayservice/applications/` into `serveConfigV2` via `helm/rayservice/templates/rayservice.yaml`.
+Data and control flow:
 
-### Best Practice: Test New Models from Your Own Branch
+- Read static inference shape from config (`tile_size`).
+- Resolve model provider from `_target_` and fetch the ONNX artifact (typically from MLflow).
+- Build ONNX Runtime session with desired execution providers.
+- Cache input and output tensor names for fast inference calls.
+- Apply batching limits from config directly to `predict`.
 
-When adding a new model, create and use your own GitHub branch for testing. This avoids affecting deployments that still depend on `main`.
+### `predict`: batched ONNX inference
 
-Example:
-
-- Branch name: `feature/my-new-model`
-- `working_dir`:
-
-```yaml
-runtime_env:
-  working_dir: https://github.com/RationAI/model-service/archive/refs/heads/feature/my-new-model.zip
+```python
+@serve.batch
+async def predict(self, images: list[NDArray[np.uint8]]) -> list[float]:
+  batch = np.stack(images, axis=0, dtype=np.uint8)
+  outputs = self.session.run([self.output_name], {self.input_name: batch})
+  return outputs[0].flatten().tolist()
 ```
 
-After validation, merge the branch and switch `working_dir` back to the target shared branch (for example `main`).
+What happens with data:
 
-Before running Helm, commit and push your new model code and application YAML to your branch. Ray downloads code from the branch ZIP in `runtime_env.working_dir`, so unpushed local changes will not be deployed.
+- Ray Serve collects many incoming requests into `images`.
+- `np.stack` converts many single images into one batch tensor.
+- ONNX runtime computes one forward pass over the whole batch.
+- Output tensor is flattened and returned as a Python list.
+- Ray Serve maps each list item back to the original HTTP request.
 
-If Ray keeps using older code after a deploy, append a cache-busting query parameter to `working_dir` (for example `.../main.zip?v=2`) and deploy again.
+### `root`: HTTP request parsing and serialization
 
-## Best Practices
+```python
+@fastapi.post("/")
+async def root(self, request: Request) -> float:
+  data = await asyncio.to_thread(self.lz4.decompress, await request.body())
+  image = (
+    np.frombuffer(data, dtype=np.uint8)
+    .reshape(self.tile_size, self.tile_size, 3)
+    .transpose(2, 0, 1)
+  )
+  result = await self.predict(image)
+  return result
+```
 
-1. **Error Handling**: Always wrap inference in try-except blocks
-2. **Logging**: Use `print()` or `logging` for debugging (viewable in pod logs)
-3. **Resource Limits**: Set appropriate CPU/memory/GPU limits
-4. **Model Loading**: Cache models to avoid reloading on each request
-5. **Input Validation**: Validate input data format and ranges
-6. **Batching**: Use batching for throughput-intensive workloads
-7. **Health Checks**: Implement health check endpoints for monitoring
+What each step does:
+
+- `await request.body()`: gets raw HTTP bytes.
+- `lz4.decompress`: reconstructs original image bytes.
+- `np.frombuffer(...).reshape(...)`: converts bytes to `HWC` uint8 image.
+- `.transpose(2, 0, 1)`: converts image to `CHW` layout expected by ONNX model.
+- `await self.predict(image)`: sends item to batching queue and waits for matching output.
+
+### Application binding
+
+```python
+app = MyModel.bind()
+```
+
+This exported symbol is what `import_path: models.my_model:app` points to in Helm.
+
+## Next Step
+
+After the Python entrypoint is ready, continue with the [Deployment Guide](deployment-guide.md). That guide covers the Helm application YAML, deployment, rollout monitoring, and smoke testing in the order you should run them.
 
 ## Related Guides
 
 - [Deployment Guide](deployment-guide.md)
 - [Configuration Reference](configuration-reference.md)
+- [Optimization Guide](optimization-guide.md)
+- [Troubleshooting](troubleshooting.md)
 - [Architecture Overview](../architecture/overview.md)

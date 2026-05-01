@@ -20,25 +20,37 @@ Use this documentation when:
 - Default worker profiles in `helm/rayservice/workers/`.
 - Operational guides for deployment, scaling, and troubleshooting.
 
+## Two Ways to Use the Service
+
+Depending on your goal, you will either run a pre-built model or deploy a custom model:
+
+1. **Run an existing model**
+   If the model you need is already in [Available Models](available-models.md), you just install the Helm chart.
+   _Action:_ Go to [Quick Start](get-started/quick-start.md).
+
+2. **Deploy a new model**
+   If you're bringing a new ML architecture, follow the [Deployment Guide](guides/deployment-guide.md) which will guide you through the entire flow: Python implementation, Helm config, and deployment.
+
 ## Start Here
 
-### New user path
+### I want to run an existing model
+
+If the model is already implemented and you just need to spin it up on the cluster.
 
 1. [Quick Start](get-started/quick-start.md)
-2. [Deployment Guide](guides/deployment-guide.md)
+2. [Deployment Guide](guides/deployment-guide.md) (steps 2+: Helm config and deploy)
 3. [Troubleshooting](guides/troubleshooting.md)
 
-### Model author path
+### I want to deploy a new model
 
-1. [Adding New Models](guides/adding-models.md)
-2. [Configuration Reference](guides/configuration-reference.md)
-3. [Deployment Guide](guides/deployment-guide.md)
+If you are bringing a new ML architecture and need to write a custom Ray Serve application.
 
-### Operator path
+Start with the [Deployment Guide](guides/deployment-guide.md):
 
-1. [Configuration Reference](guides/configuration-reference.md)
-2. [Architecture Overview](architecture/overview.md)
-3. [Troubleshooting](guides/troubleshooting.md)
+1. **Step 1**: Prepare Python Entrypoint → this will point you to [Adding New Models](guides/adding-models.md)
+2. **Step 2–6**: Return to [Deployment Guide](guides/deployment-guide.md) for Helm config and deployment
+3. [Optimization Guide](guides/optimization-guide.md) (optional, for tuning performance)
+4. [Troubleshooting](guides/troubleshooting.md) (if anything goes wrong)
 
 ## Documentation Map
 
@@ -51,7 +63,12 @@ Use this documentation when:
 - [Adding New Models](guides/adding-models.md): implement model code and bind routes.
 - [Deployment Guide](guides/deployment-guide.md): safe deployment workflow and production checklist.
 - [Configuration Reference](guides/configuration-reference.md): source of truth for Helm and Ray Serve settings.
+- [Optimization Guide](guides/optimization-guide.md): TensorRT, precision, batch tuning, and session options.
 - [Troubleshooting](guides/troubleshooting.md): diagnostics for deployment and runtime failures.
+
+### Models
+
+- [Available Models](available-models.md): list of pre-configured models with endpoints and SDK patterns.
 
 ### Architecture
 

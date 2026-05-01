@@ -210,6 +210,46 @@ runtime_env:
 
 Whenever you push subsequent revisions, just manually bump the `v=1` to `v=2`. During the next Helm deployment process, Ray evaluates the URL as new, retrieves the fresh code zip, and deploys successfully.
 
+## Large ONNX Model Export (>2GB)
+
+### Problem
+
+When exporting a large PyTorch model (>2GB) to ONNX, the resulting file is split into multiple parts: a `.onnx` graph file plus external weight files (`.bin` or `.pb`). Deploying such multi-part exports can be tricky.
+
+### Two Approaches
+
+**Option 1: Merge into a single ONNX file**
+
+Load the model with external data and save it back as a single unified file:
+
+```python
+import onnx
+
+model = onnx.load("model-with-external-data.onnx", load_external_data=True)
+onnx.save_model(
+    model,
+    "merged-unified-model.onnx",
+    save_as_external_data=False,
+    size_threshold=0,  # Force everything into one file
+)
+```
+
+Then upload `merged-unified-model.onnx` to MLflow. This is the simplest approach if your server has enough RAM during the merge operation.
+
+**Option 2: Upload the entire export directory**
+
+If merging consumes too much memory, keep the multi-part structure and upload everything:
+
+```python
+import mlflow
+
+with mlflow.start_run():
+    # Upload the whole export folder with both .onnx and .bin files
+    mlflow.log_artifacts("onnx_export_dir", artifact_path="model")
+```
+
+When Ray Serve initializes and downloads the artifact, it will fetch both the graph and weight files together.
+
 ## Helpful Commands
 
 ```bash
@@ -220,3 +260,11 @@ kubectl get svc -n rationai-jobs-ns
 # see all pods for a RayService
 kubectl get pods -n rationai-jobs-ns -l ray.io/cluster=<release-name>
 ```
+
+## Related Guides
+
+- [Deployment Guide](deployment-guide.md)
+- [Adding New Models](adding-models.md)
+- [Configuration Reference](configuration-reference.md)
+- [Optimization Guide](optimization-guide.md)
+- [Architecture Overview](../architecture/overview.md)
