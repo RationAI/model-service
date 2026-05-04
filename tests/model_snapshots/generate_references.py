@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 
 import numpy as np
-from _shared import _read_tile
+from _shared import _read_tile_at
 from rationai import Client
 
 
@@ -15,20 +15,14 @@ MODELS_BASE_URL = os.environ.get(
 
 CASES = [
     {
-        "label": "breast",
-        "slide_path": "/mnt/bioptic_tree/2019/08/728/2019_08728-01-T/2019_08728-01-T.mrxs",
-        "model_id": "episeg-1",
-        "type": "semantic",
-        "tile_size": 1024,
-        "level": 0,
-    },
-    {
-        "label": "colon",
-        "slide_path": "/mnt/data/MOU/colon/comparison_of_scanners/FLASH2021_5638-02-T.mrxs",
+        "label": "prostate_positive",
+        "slide_path": "/mnt/data/MOU/prostate/tile_level_annotations/P-2016_2386-06-1.mrxs",
         "model_id": "prostate-classifier-1",
         "type": "binary",
         "tile_size": 512,
         "level": 0,
+        "x": 43390,
+        "y": 45865,
     },
 ]
 
@@ -43,7 +37,13 @@ def generate_references() -> None:
             print(f"\n[{label}] {model_id} ({mtype})")
 
             try:
-                tile = _read_tile(case["slide_path"], case["tile_size"], case["level"])
+                tile = _read_tile_at(
+                    case["slide_path"],
+                    case["x"],
+                    case["y"],
+                    case["tile_size"],
+                    case["level"],
+                )
             except Exception as e:
                 print(f"  -> Failed to read tile: {e}")
                 continue
