@@ -21,8 +21,8 @@ BINARY_POSITIVE_THRESHOLD = 0.5
         (
             "prostate_negative",
             "/mnt/data/MOU/prostate/tile_level_annotations/P-2016_0845-02-0.mrxs",
-            34467,
-            104964,
+            31017,
+            113220,
             False,
         ),
     ],
