@@ -18,13 +18,15 @@ def _models_base_url() -> str:
     )
 
 
-def _read_tile(slide_path: str, tile_size: int, level: int) -> NDArray[np.uint8]:
+def _read_tile_at(
+    slide_path: str, x: int, y: int, tile_size: int, level: int
+) -> NDArray[np.uint8]:
     with OpenSlide(slide_path) as slide:
-        w, h = slide.level_dimensions[level]
-        x = max(0, (w - tile_size) // 2)
-        y = max(0, (h - tile_size) // 2)
+        downsample = slide.level_downsamples[level]
+        x_rel = int(x / downsample)
+        y_rel = int(y / downsample)
         tile = slide.read_region_relative(
-            (x, y), level, (tile_size, tile_size)
+            (x_rel, y_rel), level, (tile_size, tile_size)
         ).convert("RGB")
     return np.asarray(tile, dtype=np.uint8)
 
@@ -32,13 +34,15 @@ def _read_tile(slide_path: str, tile_size: int, level: int) -> NDArray[np.uint8]
 def run_binary_classifier_case(
     model_id: str,
     slide_path: str,
+    x: int,
+    y: int,
     expected_score: float,
     tile_size: int = 512,
     level: int = 0,
     timeout_s: float = 600.0,
     tolerance: float = 0.00001,
 ) -> None:
-    tile = _read_tile(slide_path, tile_size, level)
+    tile = _read_tile_at(slide_path, x, y, tile_size, level)
 
     with Client(models_base_url=_models_base_url(), timeout=timeout_s) as client:
         t0 = perf_counter()
@@ -57,6 +61,8 @@ def run_binary_classifier_case(
 def run_semantic_segmentation_case(
     model_id: str,
     slide_path: str,
+    x: int,
+    y: int,
     expected_array_path: Path | str,
     tile_size: int = 1024,
     level: int = 0,
@@ -68,7 +74,7 @@ def run_semantic_segmentation_case(
     if not expected_array_path.exists():
         pytest.fail(f"Reference file does not exist: {expected_array_path}")
 
-    tile = _read_tile(slide_path, tile_size, level)
+    tile = _read_tile_at(slide_path, x, y, tile_size, level)
     expected = np.load(expected_array_path)
 
     with Client(models_base_url=_models_base_url(), timeout=timeout_s) as client:
