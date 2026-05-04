@@ -12,6 +12,7 @@ MODELS_BASE_URL = os.environ.get(
     "MODEL_SERVICE_MODELS_BASE_URL",
     "http://rayservice-model-tests-serve-svc.rationai-jobs-ns.svc.cluster.local:8000",
 )
+BINARY_POSITIVE_THRESHOLD = 0.5
 
 CASES = [
     {
@@ -23,6 +24,16 @@ CASES = [
         "level": 0,
         "x": 43390,
         "y": 45865,
+    },
+    {
+        "label": "prostate_negative",
+        "slide_path": "/mnt/data/MOU/prostate/tile_level_annotations/P-2016_0845-02-0.mrxs",
+        "model_id": "prostate-classifier-1",
+        "type": "binary",
+        "tile_size": 512,
+        "level": 0,
+        "x": 34467,
+        "y": 104964,
     },
 ]
 
@@ -57,7 +68,23 @@ def generate_references() -> None:
                     )
                     out_file = OUT_DIR / f"{label}_{model_id}_expected.json"
                     with out_file.open("w") as f:
-                        json.dump({"expected_score": score}, f, indent=2)
+                        json.dump(
+                            {
+                                "label": label,
+                                "model_id": model_id,
+                                "slide_path": case["slide_path"],
+                                "x": case["x"],
+                                "y": case["y"],
+                                "tile_size": case["tile_size"],
+                                "level": case["level"],
+                                "threshold": BINARY_POSITIVE_THRESHOLD,
+                                "expected_is_positive": score
+                                >= BINARY_POSITIVE_THRESHOLD,
+                                "expected_score": score,
+                            },
+                            f,
+                            indent=2,
+                        )
                     print(f"  -> Saved {out_file}")
 
                 elif mtype == "semantic":
@@ -70,6 +97,15 @@ def generate_references() -> None:
                     np.save(out_file, arr)
                     print(f"  -> Saved {out_file} shape={arr.shape}")
 
+                elif mtype == "embed":
+                    arr = np.asarray(
+                        client.models.embed_image(
+                            model=model_id, image=tile, timeout=1200
+                        )
+                    )
+                    out_file = OUT_DIR / f"{label}_{model_id}_expected.npy"
+                    np.save(out_file, arr)
+                    print(f"  -> Saved {out_file} shape={arr.shape}")
             except Exception as e:
                 print(f"  -> ERROR: {e}")
 

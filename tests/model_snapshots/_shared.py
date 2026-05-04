@@ -41,6 +41,8 @@ def run_binary_classifier_case(
     level: int = 0,
     timeout_s: float = 600.0,
     tolerance: float = 0.00001,
+    expected_is_positive: bool | None = None,
+    threshold: float = 0.5,
 ) -> None:
     tile = _read_tile_at(slide_path, x, y, tile_size, level)
 
@@ -52,6 +54,14 @@ def run_binary_classifier_case(
     print(
         f"\n  model={model_id} | tile={tile_size}px | time={elapsed:.2f}s | score={actual_score:.6f} | expected={expected_score:.6f}"
     )
+
+    if expected_is_positive is not None:
+        actual_is_positive = actual_score >= threshold
+        assert actual_is_positive == expected_is_positive, (
+            "Binary class mismatch: "
+            f"expected_is_positive={expected_is_positive}, "
+            f"actual_score={actual_score:.6f}, threshold={threshold:.3f}"
+        )
 
     assert abs(actual_score - expected_score) <= tolerance, (
         f"Binary score mismatch: expected={expected_score}, actual={actual_score}, tolerance={tolerance}"
@@ -80,6 +90,42 @@ def run_semantic_segmentation_case(
     with Client(models_base_url=_models_base_url(), timeout=timeout_s) as client:
         t0 = perf_counter()
         actual = np.asarray(client.models.segment_image(model=model_id, image=tile))
+        elapsed = perf_counter() - t0
+
+    max_diff = np.abs(actual.astype(np.float32) - expected.astype(np.float32)).max()
+    print(
+        f"\n  model={model_id} | tile={tile_size}px | time={elapsed:.2f}s | shape={actual.shape} | max_diff={max_diff:.6f}"
+    )
+
+    if actual.shape != expected.shape:
+        pytest.fail(f"Shape mismatch: expected={expected.shape}, actual={actual.shape}")
+
+    if not np.allclose(actual, expected, rtol=rtol, atol=atol):
+        pytest.fail(
+            f"Output mismatch beyond tolerance (atol={atol}, rtol={rtol}, max_abs_diff={max_diff})"
+        )
+
+
+def run_embed_case(
+    model_id: str,
+    slide_path: str,
+    expected_array_path: Path | str,
+    tile_size: int = 224,
+    level: int = 0,
+    timeout_s: float = 1200.0,
+    atol: float = 0.0,
+    rtol: float = 0.0,
+) -> None:
+    expected_array_path = Path(expected_array_path)
+    if not expected_array_path.exists():
+        pytest.fail(f"Reference file does not exist: {expected_array_path}")
+
+    tile = _read_tile(slide_path, tile_size, level)
+    expected = np.load(expected_array_path)
+
+    with Client(models_base_url=_models_base_url(), timeout=timeout_s) as client:
+        t0 = perf_counter()
+        actual = np.asarray(client.models.embed_image(model=model_id, image=tile))
         elapsed = perf_counter() - t0
 
     max_diff = np.abs(actual.astype(np.float32) - expected.astype(np.float32)).max()

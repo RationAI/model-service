@@ -2,7 +2,7 @@
   import_path: builders.test_runner:app
   route_prefix: /run-tests
   runtime_env:
-    working_dir: https://github.com/RationAI/model-service/archive/refs/heads/feature/tests.zip?v5
+    working_dir: https://github.com/RationAI/model-service/archive/refs/heads/feature/tests.zip?v10
     pip:
       - git+https://github.com/RationAI/rationai-sdk-python.git
   deployments:
@@ -12,5 +12,5 @@
         max_replicas: 1
         target_ongoing_requests: 1
       ray_actor_options:
-        num_cpus: 4
-        memory: 8589934592
+        num_cpus: 1
+        memory: 2147483648
