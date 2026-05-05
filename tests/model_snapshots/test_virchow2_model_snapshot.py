@@ -8,7 +8,7 @@ from _shared import run_embed_case
     "label, slide_path, x, y",
     [
         (
-            "prostate",
+            "virchow2",
             "/mnt/data/MOU/prostate/tile_level_annotations/P-2016_1367-01-0.mrxs",
             40000,
             70000,
