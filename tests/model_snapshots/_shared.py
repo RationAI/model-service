@@ -109,6 +109,8 @@ def run_semantic_segmentation_case(
 def run_embed_case(
     model_id: str,
     slide_path: str,
+    x: int,
+    y: int,
     expected_array_path: Path | str,
     tile_size: int = 224,
     level: int = 0,
@@ -120,7 +122,7 @@ def run_embed_case(
     if not expected_array_path.exists():
         pytest.fail(f"Reference file does not exist: {expected_array_path}")
 
-    tile = _read_tile(slide_path, tile_size, level)
+    tile = _read_tile_at(slide_path, x, y, tile_size, level)
     expected = np.load(expected_array_path)
 
     with Client(models_base_url=_models_base_url(), timeout=timeout_s) as client:

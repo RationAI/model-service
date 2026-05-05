@@ -14,28 +14,20 @@ MODELS_BASE_URL = os.environ.get(
 )
 BINARY_POSITIVE_THRESHOLD = 0.5
 
-CASES = [
-    {
-        "label": "prostate_positive",
-        "slide_path": "/mnt/data/MOU/prostate/tile_level_annotations/P-2016_2386-06-1.mrxs",
-        "model_id": "prostate-classifier-1",
-        "type": "binary",
-        "tile_size": 512,
-        "level": 0,
-        "x": 43390,
-        "y": 45865,
-    },
-    {
-        "label": "prostate_negative",
-        "slide_path": "/mnt/data/MOU/prostate/tile_level_annotations/P-2016_0845-02-0.mrxs",
-        "model_id": "prostate-classifier-1",
-        "type": "binary",
-        "tile_size": 512,
-        "level": 0,
-        "x": 32950,
-        "y": 108990,
-    },
-]
+# Keep only one active case here. Store other candidate slides in new_images.txt
+# and swap them in when you want to regenerate a different reference.
+ACTIVE_CASE = {
+    "label": "virchow2",
+    "slide_path": "/mnt/data/MOU/prostate/tile_level_annotations/P-2016_1367-01-0.mrxs",
+    "model_id": "virchow2",
+    "type": "embed",
+    "tile_size": 224,
+    "level": 0,
+    "x": 40000,
+    "y": 70000,
+}
+
+CASES = [ACTIVE_CASE]
 
 
 def generate_references() -> None:
