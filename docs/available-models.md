@@ -24,6 +24,7 @@ A binary classification model (e.g., tumor vs. normal tissue).
 - **Input**: LZ4-compressed raw bytes of an image (RGB format).
   - The model converts these bytes back to a NumPy array (`uint8`) of shape `(tile_size, tile_size, 3)`.
 - **Output**: A single floating-point number representing the classification score.
+- **SDK example**: `client.models.classify_image(model="prostate-classifier-1", image=image, timeout=30.0)`
 
 ### 2. Semantic Segmentation (`/episeg-1`)
 
@@ -33,6 +34,7 @@ A semantic segmentation model yielding a prediction map over the input image.
   - Expected layout before compression is `(tile_size, tile_size, 3)`.
 - **Output**: LZ4-compressed sequence of bytes representing an `np.float16` NumPy array.
   - The client SDK should decompress this buffer and reconstruct the float16 array.
+- **SDK example**: `client.models.segment_image(model="episeg-1", image=image, timeout=30.0)`
 
 ### 3. Virchow2 (`/virchow2`)
 
@@ -43,6 +45,7 @@ A versatile foundation model (Virchow2) used primarily for generating embeddings
 - **Headers**:
   - `x-output-dtype` (optional, default: `float32`): Sets the return precision. Can be `float32` or `float16`.
   - `x-pool-tokens` (optional, default: `true`): If `true`, returns a pooled result (usually `class_token` and `mean` patch tokens). If `false`, returns unpooled raw outputs.
+- **SDK example**: `client.models.embed_image(model="virchow2", image=image, output_dtype=np.float16, timeout=30.0, pool_tokens="false")`
 
 ### 4. Heatmap Builder (`/heatmap-builder`)
 
@@ -50,6 +53,7 @@ A processing pipeline element for aggregating inferences into spatial heatmaps.
 
 - **Input**: Typically takes standard HTTP POST requests with localized predictions to stitch into a global heatmap representations.
 - **Output**: Heatmap data structure (format depends on the implemented builder logic).
+- **SDK example**: `client.slide.heatmap(model="prostate-classifier-1", slide_path="/mnt/data/slide.mrxs", tissue_mask_path="/mnt/data/mask.tif", output_path="/mnt/data/output_heatmap.tif", stride_fraction=0.5, output_bigtiff_tile_height=512, output_bigtiff_tile_width=512, timeout=1000)`
 
 ---
 
