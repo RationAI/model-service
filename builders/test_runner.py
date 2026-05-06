@@ -1,7 +1,7 @@
 import subprocess
 import sys
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from ray import serve
 
 
@@ -18,7 +18,7 @@ class TestRunner:
         )
 
     @fastapi.post("/")
-    def run(self) -> str:
+    def run(self) -> Response:
 
         result = subprocess.run(
             [
@@ -39,7 +39,7 @@ class TestRunner:
         output = result.stdout
         if result.returncode != 0:
             output += f"\nSTDERR:\n{result.stderr}"
-        return output
+        return Response(content=output, media_type="text/plain")
 
 
 app = TestRunner.bind()
