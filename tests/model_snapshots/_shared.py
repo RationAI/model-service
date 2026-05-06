@@ -42,6 +42,8 @@ def run_binary_classifier_case(
     timeout_s: float = 600.0,
     expected_is_positive: bool | None = None,
     threshold: float = 0.5,
+    atol: float = 1e-6,
+    rtol: float = 1e-5,
     case_name: str | None = None,
 ) -> None:
     tile = _read_tile_at(slide_path, x, y, tile_size, level)
@@ -61,8 +63,13 @@ def run_binary_classifier_case(
             f"actual_score={actual_score:.6f}, threshold={threshold:.3f}"
         )
 
+    if not np.isclose(actual_score, expected_score, rtol=rtol, atol=atol):
+        pytest.fail(
+            f"Binary score mismatch beyond tolerance (atol={atol}, rtol={rtol}, "
+            f"expected={expected_score:.6f}, actual={actual_score:.6f})"
+        )
+
     print(f"\n/{model_id}")
-    print("passed")
     print(
         f"{name} stats: score={actual_score:.6f} expected={expected_score:.6f} "
         f"delta={delta:+.6f} threshold={threshold:.3f}"
@@ -116,9 +123,13 @@ def run_semantic_segmentation_case(
     if actual.shape != expected.shape:
         pytest.fail(f"Shape mismatch: expected={expected.shape}, actual={actual.shape}")
 
-    if not np.allclose(actual, expected, rtol=rtol, atol=atol):
+    close_mask = np.isclose(actual, expected, rtol=rtol, atol=atol)
+    if not close_mask.all():
+        mismatch_fraction = float((~close_mask).mean())
         pytest.fail(
-            f"Output mismatch beyond tolerance (atol={atol}, rtol={rtol}, max_abs_diff={max_diff})"
+            "Output mismatch beyond tolerance "
+            f"(atol={atol}, rtol={rtol}, max_abs_diff={max_diff}, "
+            f"mismatch_fraction={mismatch_fraction:.6f})"
         )
 
     if epithelium_threshold is not None and min_epithelium_fraction is not None:
@@ -144,7 +155,6 @@ def run_semantic_segmentation_case(
             )
 
     print(f"\n/{model_id}")
-    print("passed")
     print(
         f"{name} stats: shape={actual.shape} max_diff={max_diff:.6f} "
         f"min={min_val:.6f} mean={mean_val:.6f} max={max_val:.6f} "
@@ -196,7 +206,6 @@ def run_embed_case(
         )
 
     print(f"\n/{model_id}")
-    print("passed")
     print(
         f"{name} stats: shape={actual.shape} cosine_similarity={similarity:.6f} "
         f"norm_actual={actual_norm:.6f} norm_expected={expected_norm:.6f}"
