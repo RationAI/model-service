@@ -76,4 +76,5 @@ def test_prostate_classifier_snapshot(
         level=0,
         expected_is_positive=expected_is_positive,
         threshold=threshold,
+        case_name=label,
     )

@@ -27,4 +27,7 @@ def test_semantic_episeg(label: str, slide_path: str, x: int, y: int) -> None:
         expected_array_path=expected_array_path,
         tile_size=1024,
         level=0,
+        epithelium_threshold=0.5,
+        min_epithelium_fraction=0.01,
+        case_name=label,
     )

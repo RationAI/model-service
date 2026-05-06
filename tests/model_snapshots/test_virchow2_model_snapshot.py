@@ -27,4 +27,5 @@ def test_virchow2(label: str, slide_path: str, x: int, y: int) -> None:
         expected_array_path=expected_array_path,
         tile_size=224,
         level=0,
+        case_name=label,
     )
