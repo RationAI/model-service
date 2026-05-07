@@ -8,7 +8,7 @@
   deployments:
     - name: Virchow2
       max_ongoing_requests: 1024
-      max_queued_requests: 2048
+      max_queued_requests: 8192
       autoscaling_config:
         min_replicas: 0
         max_replicas: 4
