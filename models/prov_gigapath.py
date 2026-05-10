@@ -39,22 +39,30 @@ class ProvGigaPath:
 
     def reconfigure(self, config: Config) -> None:
         import timm
-        from timm.data.config import resolve_data_config
-        from timm.data.transforms_factory import create_transform
+        from torchvision import transforms
 
         self.tile_size = config["tile_size"]
         model_config = dict(config["model"])
         repo_id = model_config["repo_id"]
 
         self.model = timm.create_model(
-            f"hf-hub:{repo_id}",
+            f"hf_hub:{repo_id}",
             pretrained=True,
-            num_classes=0,
         )
         self.model = self.model.to(self.device).eval()
 
-        self.transforms = create_transform(
-            **resolve_data_config(self.model.pretrained_cfg, model=self.model)
+        # Based on the HF documentation
+        self.transforms = transforms.Compose(
+            [
+                transforms.Resize(
+                    256, interpolation=transforms.InterpolationMode.BICUBIC
+                ),
+                transforms.CenterCrop(224),
+                transforms.ToTensor(),
+                transforms.Normalize(
+                    mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)
+                ),
+            ]
         )
 
         self.predict.set_max_batch_size(config["max_batch_size"])  # type: ignore[attr-defined]
@@ -65,18 +73,8 @@ class ProvGigaPath:
         import torch
 
         tensors = torch.stack(inputs).to(self.device)
-        device_type = self.device.type
-
-        # PyTorch autocast does not support float16 on CPU (throws RuntimeError).
-        # bfloat16 is the only supported low-precision option for CPU inference.
-        autocast_dtype = torch.float16 if device_type == "cuda" else torch.bfloat16
-
-        with (
-            torch.inference_mode(),
-            torch.autocast(device_type=device_type, dtype=autocast_dtype),
-        ):
+        with torch.inference_mode():
             output = self.model(tensors)
-
         return list(output)
 
     @fastapi.post("/")
