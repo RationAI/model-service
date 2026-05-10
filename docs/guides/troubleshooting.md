@@ -21,6 +21,30 @@ kubectl logs -n rationai-jobs-ns -l ray.io/node-type=head --tail=200
 kubectl logs -n rationai-jobs-ns -l ray.io/node-type=worker --tail=200
 ```
 
+## Check Rancher (cluster events)
+
+If a server request is **timing out** or you see resources exhausted, the Rancher cluster UI often contains useful cluster-level events and node/pod status that explain the root cause. Visit the RayService explorer for the `rationai-jobs-ns` namespace:
+
+[Rancher RayService Explorer — rationai-jobs-ns / rayservice-model](https://rancher.cloud.trusted.e-infra.cz/dashboard/c/c-m-lr2wzbk8/explorer/ray.io.rayservice/rationai-jobs-ns/rayservice-model)
+
+Look for events, node capacity, and pod scheduling failures — these are frequently the reason Serve endpoints drop or time out.
+
+Example:
+```yaml
+virchow2:
+        serveDeploymentStatuses:
+          Virchow2:
+            message: >-
+              Deployment 'Virchow2' in application 'virchow2' has 1 replicas
+              that have taken more than 30s to be scheduled. This may be due to
+              waiting for the cluster to auto-scale or for a runtime environment
+              to be installed. Resources required for each replica: {"CPU": 4.0,
+              "GPU": 1.0, "memory": 8589934592}, total resources available:
+              {"memory": 4294967296.0}. Use `ray status` for more details.
+            status: UPSCALING
+        status: RUNNING
+```
+There are no resources available to create a worker (4 CPUs, 1 GPU and 8GB memory) so the deployment is stuck in `UPSCALING` until the resources are available.
 ## RayService Shows `DEPLOY_FAILED`
 
 ### What it usually means
