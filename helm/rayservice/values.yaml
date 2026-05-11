@@ -6,5 +6,6 @@ applications:
   - episeg-1
   - heatmap-builder
   - prostate-classifier-1
+  - prov-gigapath
   - virchow2
   - test-runner
