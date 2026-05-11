@@ -24,7 +24,6 @@ A binary classification model (e.g., tumor vs. normal tissue).
 - **Input**: LZ4-compressed raw bytes of an image (RGB format).
   - The model converts these bytes back to a NumPy array (`uint8`) of shape `(tile_size, tile_size, 3)`.
 - **Output**: A single floating-point number representing the classification score.
-- **Output**: A single floating-point number representing the classification score.
 
 **SDK example**:
 
