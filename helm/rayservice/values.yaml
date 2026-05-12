@@ -9,3 +9,4 @@ applications:
   - prov-gigapath
   - virchow2
   - test-runner
+  - throughput-test
