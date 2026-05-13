@@ -1,7 +1,7 @@
 import subprocess
 import sys
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from ray import serve
 
 
@@ -23,7 +23,7 @@ class ThroughputRunner:
         duration_s: float = 60.0,
         concurrency: int = 8,
         timeout: float = 60.0,
-    ) -> str:
+    ) -> Response:
         result = subprocess.run(
             [
                 sys.executable,
@@ -38,9 +38,10 @@ class ThroughputRunner:
             capture_output=True,
             text=True,
         )
-        return result.stdout + (
+        output = result.stdout + (
             f"\nSTDERR:\n{result.stderr}" if result.returncode != 0 else ""
         )
+        return Response(content=output, media_type="text/plain")
 
 
 app = ThroughputRunner.bind()

@@ -199,7 +199,6 @@ def main() -> None:
 
     results = []
     for name, model_type, tile_size in models:
-        print(f"/ {name}  ({model_type}, tile={tile_size})")
         result = run_model(
             name,
             model_type,
@@ -212,14 +211,11 @@ def main() -> None:
         )
         results.append(result)
         print(
-            f"  ok={result['ok']} fail_503={result['fail_503']} "
-            f"fail_other={result['fail_other']} elapsed={result['elapsed_s']:.2f}s"
-        )
-        print(
-            f"  img/s={result['throughput']:.2f} p50={result['p50']:.3f}s "
+            f"{name} stats: ok={result['ok']} fail_503={result['fail_503']} "
+            f"fail_other={result['fail_other']} elapsed={result['elapsed_s']:.2f}s "
+            f"img/s={result['throughput']:.2f} p50={result['p50']:.3f}s "
             f"p95={result['p95']:.3f}s"
         )
-        print()
 
     print("Summary")
     print("name".ljust(28), "img/s".rjust(10), "p50".rjust(10), "p95".rjust(10))
