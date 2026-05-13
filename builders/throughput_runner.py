@@ -27,7 +27,7 @@ class ThroughputRunner:
         result = subprocess.run(
             [
                 sys.executable,
-                "misc/throughput_test.py",
+                "tests/benchmark/perf_throughput.py",
                 "--duration-s",
                 str(duration_s),
                 "--concurrency",
