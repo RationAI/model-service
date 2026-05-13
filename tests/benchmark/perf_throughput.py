@@ -68,6 +68,42 @@ def _call_model(
         raise ValueError(f"Unknown model type: {model_type}")
 
 
+def wait_for_ready(
+    model_id: str,
+    model_type: str,
+    tile_size: int,
+    timeout: float,
+    models_base_url: str,
+    wait_timeout_s: float,
+    wait_interval_s: float,
+) -> None:
+    pool = make_pool(tile_size, 1)
+    image = pool[0]
+    start = time.perf_counter()
+    reported = False
+
+    while True:
+        try:
+            with Client(models_base_url=models_base_url, timeout=timeout) as client:
+                _call_model(client, model_id, model_type, image)
+            if reported:
+                waited = time.perf_counter() - start
+                print(f"{model_id} ready after {waited:.1f}s")
+            return
+        except Exception as exc:
+            status_code = getattr(getattr(exc, "response", None), "status_code", None)
+            if status_code not in (None, 503, 504):
+                raise
+            if not reported:
+                print(f"{model_id} waiting for readiness...")
+                reported = True
+            if wait_timeout_s > 0 and (time.perf_counter() - start) >= wait_timeout_s:
+                raise RuntimeError(
+                    f"{model_id} not ready after {wait_timeout_s:.1f}s"
+                ) from exc
+            time.sleep(wait_interval_s)
+
+
 def send_loop(
     model_id: str,
     model_type: str,
@@ -184,6 +220,23 @@ def main() -> None:
     parser.add_argument("--concurrency", type=int, default=64)
     parser.add_argument("--timeout", type=float, default=60.0)
     parser.add_argument("--pool-size", type=int, default=POOL_SIZE_DEFAULT)
+    parser.add_argument(
+        "--wait-ready",
+        action="store_true",
+        help="Wait for each model to become ready before running the test",
+    )
+    parser.add_argument(
+        "--wait-timeout-s",
+        type=float,
+        default=0.0,
+        help="Max time to wait for readiness (0 = wait forever)",
+    )
+    parser.add_argument(
+        "--wait-interval-s",
+        type=float,
+        default=10.0,
+        help="Wait interval between readiness checks",
+    )
     args = parser.parse_args()
 
     models = parse_models(args.model)
@@ -199,6 +252,16 @@ def main() -> None:
 
     results = []
     for name, model_type, tile_size in models:
+        if args.wait_ready:
+            wait_for_ready(
+                model_id=name,
+                model_type=model_type,
+                tile_size=tile_size,
+                timeout=args.timeout,
+                models_base_url=args.models_base_url,
+                wait_timeout_s=args.wait_timeout_s,
+                wait_interval_s=args.wait_interval_s,
+            )
         result = run_model(
             name,
             model_type,
