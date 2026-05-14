@@ -164,6 +164,39 @@ What each step does:
 - `.transpose(2, 0, 1)`: converts image to `CHW` layout expected by ONNX model.
 - `await self.predict(image)`: sends item to batching queue and waits for matching output.
 
+### Using Foundation Models from Your Model
+
+If you are deploying a model that is a downstream head (e.g., an MLP or Attention layer trained on top of a foundation model like Virchow2 or Prov-GigaPath), you **do not** need to re-export the entire foundation model into your ONNX artifact. 
+
+Because foundation models are already deployed as independent services within the cluster, your model can directly invoke them via Ray Serve handles. In your `root` or `predict` method, simply call the foundation model first, then pass its output to your custom layers.
+
+```python
+# In your __init__ or reconfigure method:
+from ray import serve
+self.foundation_model = serve.get_app_handle("virchow2")
+
+# In your request handler:
+@fastapi.post("/")
+async def root(self, request: Request):
+    # 1. Fetch raw image bytes from request
+    ...
+    
+    # 2. Call the foundation model via its Serve handle
+    # (assuming your custom model needs the raw `np.ndarray` image)
+    embedding = await self.foundation_model.predict.remote(image)
+    
+    # 3. Pass the embedding to your own model's predict endpoint
+    return await self.predict(embedding)
+```
+
+## Whole-Slide (WSI) Inference and Output Builders
+
+When predicting on an entire Whole-Slide Image (WSI):
+
+1. **Heatmaps:** If your model's WSI output should be a spatial heatmap (e.g., probability maps or segmentation masks overlaying the WSI), you **do not need to implement WSI logic**. The cluster already provides a universal `HeatmapBuilder` service (running under `/heatmap-builder`). Users can pass your model's ID to the heatmap builder via the SDK, and it will tile the image, aggregate all localized predictions seamlessly, and output a multi-resolution BigTIFF mask automatically.
+
+2. **Custom WSI Aggregations (Non-Heatmap Outputs):** If your model generates something else across the entire slide (for example, a single slide-level scalar score, diagnostic classification, custom tabular statistics, embedded feature bags), you must **implement your own WSI aggregator service**. You should create a custom Application (similar to `HeatmapBuilder`) that takes paths to WSI files, iterates through the WSI tiles querying your base model for each tile, and correctly aggregates the results into your desired slide-level output format.
+
 ### Application binding
 
 ```python
