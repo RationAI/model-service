@@ -92,13 +92,7 @@ class HeatmapBuilder:
                 arr = np.asarray(prediction)
 
                 # Normalize to (B, C, *spatial) shape
-                match arr.ndim:
-                    case 0:
-                        batch = arr.reshape(1, 1)
-                    case 2 | 3:
-                        batch = arr[np.newaxis]
-                    case _:
-                        raise ValueError(f"Unsupported prediction shape: {arr.shape}")
+                batch = np.atleast_1d(arr)[np.newaxis, ...]
 
                 n_channels = batch.shape[1]
                 output_tile_extent = batch.shape[2:] if batch.ndim > 2 else (1, 1)
