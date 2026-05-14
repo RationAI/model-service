@@ -1,5 +1,6 @@
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from typing import Any, TypedDict
 
 from fastapi import FastAPI
@@ -35,11 +36,13 @@ class HeatmapBuilder:
         output_bigtiff_tile_height: int,
         output_bigtiff_tile_width: int,
     ) -> str:
+        import numpy as np
+        import pyvips
+        from ratiopath.masks.mask_builders.mask_builder import MaskBuilder
         from ratiopath.openslide import OpenSlide
         from ratiopath.tiling import grid_tiles
 
         from misc.fetch_tissue_tile import fetch_tissue_tile
-        from misc.tile_heatmap_builder import TileHeatmapBuilder
 
         model = serve.get_app_handle(model_id)
         model_config = await model.get_config.remote()
@@ -64,11 +67,11 @@ class HeatmapBuilder:
             scale_x = tissue_extent_x / extent_x
             scale_y = tissue_extent_y / extent_y
 
-            mask_builder = TileHeatmapBuilder(
-                extent_x=extent_x, extent_y=extent_y, mpp_x=mpp_x, mpp_y=mpp_y
-            )
+            mask_builder: MaskBuilder | None = None
+            mask_builder_lock = asyncio.Lock()
 
             async def process_tile(x: int, y: int) -> None:
+                nonlocal mask_builder
                 tile = await loop.run_in_executor(
                     executor,
                     fetch_tissue_tile,
@@ -82,9 +85,40 @@ class HeatmapBuilder:
                     tissue_level,
                     model_config["tile_size"],
                 )
-                if tile is not None:
-                    prediction = await model.predict.remote(tile)
-                    mask_builder.update(prediction, x, y)
+                if tile is None:
+                    return
+
+                prediction = await model.predict.remote(tile)
+                arr = np.asarray(prediction)
+
+                # Normalize to (B, C, *spatial) shape
+                match arr.ndim:
+                    case 0:
+                        batch = arr.reshape(1, 1)
+                    case 2 | 3:
+                        batch = arr[np.newaxis]
+                    case _:
+                        raise ValueError(f"Unsupported prediction shape: {arr.shape}")
+
+                n_channels = batch.shape[1]
+                output_tile_extent = batch.shape[2:] if batch.ndim > 2 else (1, 1)
+
+                if mask_builder is None:
+                    async with mask_builder_lock:
+                        if mask_builder is None:
+                            mask_builder = MaskBuilder(
+                                source_extents=(extent_y, extent_x),
+                                source_tile_extent=model_config["tile_size"],
+                                output_tile_extent=output_tile_extent,
+                                stride=stride,
+                                n_channels=n_channels,
+                                storage="memmap",
+                            )
+
+                mask_builder.update_batch(
+                    batch=batch,
+                    coords=np.array([[y, x]], dtype=np.int64),
+                )
 
             for x, y in grid_tiles(
                 slide_extent=(extent_x, extent_y),
@@ -100,11 +134,23 @@ class HeatmapBuilder:
 
             await asyncio.wait(tasks)
 
-        mask_builder.flush()
-        mask_builder.save(
+        if mask_builder is None:
+            raise RuntimeError("No tiles produced predictions; heatmap not created.")
+
+        result = mask_builder.finalize()
+        vips_image = mask_builder.resize_to_source(result)
+        vips_image = (vips_image * 255).cast(pyvips.BandFormat.UCHAR)
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+        vips_image.tiffsave(
             output_path,
-            tile_height=output_bigtiff_tile_height,
+            bigtiff=True,
+            compression=pyvips.enums.ForeignTiffCompression.DEFLATE,
+            tile=True,
             tile_width=output_bigtiff_tile_width,
+            tile_height=output_bigtiff_tile_height,
+            xres=1000 / mpp_x,
+            yres=1000 / mpp_y,
+            pyramid=True,
         )
         mask_builder.cleanup()
         return output_path
