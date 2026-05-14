@@ -112,6 +112,7 @@ class HeatmapBuilder:
                                 n_channels=n_channels,
                                 storage="memmap",
                             )
+                assert mask_builder is not None
 
                 async with update_lock:
                     mask_builder.update_batch(
