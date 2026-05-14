@@ -49,6 +49,8 @@ Create a file in `helm/rayservice/applications/` (for example `my-model.yaml`) w
         max_replicas: 4
 ```
 
+- Add the new application file name to `helm/rayservice/values.yaml` under `applications`.
+
 Notes:
 
 - Use a dedicated branch in `working_dir` during development.
