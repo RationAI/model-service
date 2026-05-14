@@ -115,9 +115,12 @@ class HeatmapBuilder:
                 assert mask_builder is not None
 
                 async with update_lock:
-                    mask_builder.update_batch(
-                        batch=batch,
-                        coords=np.array([[y, x]], dtype=np.int64),
+                    await loop.run_in_executor(
+                        executor,
+                        lambda: mask_builder.update_batch(
+                            batch=batch,
+                            coords=np.array([[y, x]], dtype=np.int64),
+                        ),
                     )
 
             for x, y in grid_tiles(
@@ -126,32 +129,43 @@ class HeatmapBuilder:
                 stride=(stride, stride),
             ):
                 if len(tasks) >= self.max_concurrent_tasks:
-                    _, tasks = await asyncio.wait(
+                    done, tasks = await asyncio.wait(
                         tasks, return_when=asyncio.FIRST_COMPLETED
                     )
+                    for task in done:
+                        task.result()
                 tasks.add(asyncio.create_task(process_tile(x, y)))
 
-            await asyncio.wait(tasks)
+            if tasks:
+                done, _ = await asyncio.wait(tasks)
+                for task in done:
+                    task.result()
 
         if mask_builder is None:
             raise RuntimeError("No tiles produced predictions; heatmap not created.")
 
-        result = np.nan_to_num(mask_builder.finalize(), nan=0.0)
-        vips_image = mask_builder.resize_to_source(result)
-        vips_image = (vips_image * 255).cast(pyvips.BandFormat.UCHAR)
-        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-        vips_image.tiffsave(
-            output_path,
-            bigtiff=True,
-            compression=pyvips.enums.ForeignTiffCompression.DEFLATE,
-            tile=True,
-            tile_width=output_bigtiff_tile_width,
-            tile_height=output_bigtiff_tile_height,
-            xres=1000 / mpp_x,
-            yres=1000 / mpp_y,
-            pyramid=True,
-        )
-        mask_builder.cleanup()
+        try:
+            result = np.nan_to_num(mask_builder.finalize(), nan=0.0, copy=False)
+            vips_image = mask_builder.resize_to_source(result)
+            vips_image = (vips_image * 255).cast(pyvips.BandFormat.UCHAR)
+            Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+
+            await loop.run_in_executor(
+                None,
+                lambda: vips_image.tiffsave(
+                    output_path,
+                    bigtiff=True,
+                    compression=pyvips.enums.ForeignTiffCompression.DEFLATE,
+                    tile=True,
+                    tile_width=output_bigtiff_tile_width,
+                    tile_height=output_bigtiff_tile_height,
+                    xres=1000 / mpp_x,
+                    yres=1000 / mpp_y,
+                    pyramid=True,
+                ),
+            )
+        finally:
+            mask_builder.cleanup()
 
         return output_path
 
