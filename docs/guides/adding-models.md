@@ -164,6 +164,14 @@ What each step does:
 - `.transpose(2, 0, 1)`: converts image to `CHW` layout expected by ONNX model.
 - `await self.predict(image)`: sends item to batching queue and waits for matching output.
 
+### Application binding
+
+```python
+app = MyModel.bind()
+```
+
+This exported symbol is what `import_path: models.my_model:app` points to in Helm.
+
 ### Using Foundation Models from Your Model
 
 If you are deploying a model that is a downstream head (e.g., an MLP or Attention layer trained on top of a foundation model like Virchow2 or Prov-GigaPath), you **do not** need to re-export the entire foundation model into your ONNX artifact. 
@@ -197,13 +205,6 @@ When predicting on an entire Whole-Slide Image (WSI):
 
 2. **Custom WSI Aggregations (Non-Heatmap Outputs):** If your model generates something else across the entire slide (for example, a single slide-level scalar score, diagnostic classification, custom tabular statistics, embedded feature bags), you must **implement your own WSI aggregator service**. You should create a custom Application (similar to `HeatmapBuilder`) that takes paths to WSI files, iterates through the WSI tiles querying your base model for each tile, and correctly aggregates the results into your desired slide-level output format.
 
-### Application binding
-
-```python
-app = MyModel.bind()
-```
-
-This exported symbol is what `import_path: models.my_model:app` points to in Helm.
 
 ## Next Step
 
