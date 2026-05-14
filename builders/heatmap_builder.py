@@ -3,6 +3,8 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, TypedDict
 
+import numpy as np
+import pyvips
 from fastapi import FastAPI
 from ray import serve
 
@@ -36,8 +38,6 @@ class HeatmapBuilder:
         output_bigtiff_tile_height: int,
         output_bigtiff_tile_width: int,
     ) -> str:
-        import numpy as np
-        import pyvips
         from ratiopath.masks.mask_builders.mask_builder import MaskBuilder
         from ratiopath.openslide import OpenSlide
         from ratiopath.tiling import grid_tiles
@@ -50,6 +50,9 @@ class HeatmapBuilder:
 
         loop = asyncio.get_running_loop()
         tasks: set[asyncio.Task[Any]] = set()
+        mask_builder: MaskBuilder | None = None
+        mask_builder_lock = asyncio.Lock()
+        update_lock = asyncio.Lock()
 
         with (
             OpenSlide(slide_path) as slide,
@@ -66,9 +69,6 @@ class HeatmapBuilder:
             ]
             scale_x = tissue_extent_x / extent_x
             scale_y = tissue_extent_y / extent_y
-
-            mask_builder: MaskBuilder | None = None
-            mask_builder_lock = asyncio.Lock()
 
             async def process_tile(x: int, y: int) -> None:
                 nonlocal mask_builder
@@ -89,13 +89,17 @@ class HeatmapBuilder:
                     return
 
                 prediction = await model.predict.remote(tile)
-                arr = np.asarray(prediction)
+                arr = np.asarray(prediction, dtype=np.float32)
 
-                # Normalize to (B, C, *spatial) shape
-                batch = np.atleast_1d(arr)[np.newaxis, ...]
+                if arr.ndim == 2:
+                    batch = arr[np.newaxis, np.newaxis, ...]
+                elif arr.ndim == 3:
+                    batch = arr[np.newaxis, ...]
+                else:
+                    raise ValueError(f"Unexpected prediction shape: {arr.shape}")
 
                 n_channels = batch.shape[1]
-                output_tile_extent = batch.shape[2:] if batch.ndim > 2 else (1, 1)
+                output_tile_extent = batch.shape[2:]
 
                 if mask_builder is None:
                     async with mask_builder_lock:
@@ -109,10 +113,11 @@ class HeatmapBuilder:
                                 storage="memmap",
                             )
 
-                mask_builder.update_batch(
-                    batch=batch,
-                    coords=np.array([[y, x]], dtype=np.int64),
-                )
+                async with update_lock:
+                    mask_builder.update_batch(
+                        batch=batch,
+                        coords=np.array([[y, x]], dtype=np.int64),
+                    )
 
             for x, y in grid_tiles(
                 slide_extent=(extent_x, extent_y),
@@ -123,7 +128,6 @@ class HeatmapBuilder:
                     _, tasks = await asyncio.wait(
                         tasks, return_when=asyncio.FIRST_COMPLETED
                     )
-
                 tasks.add(asyncio.create_task(process_tile(x, y)))
 
             await asyncio.wait(tasks)
@@ -131,7 +135,7 @@ class HeatmapBuilder:
         if mask_builder is None:
             raise RuntimeError("No tiles produced predictions; heatmap not created.")
 
-        result = mask_builder.finalize()
+        result = np.nan_to_num(mask_builder.finalize(), nan=0.0)
         vips_image = mask_builder.resize_to_source(result)
         vips_image = (vips_image * 255).cast(pyvips.BandFormat.UCHAR)
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
@@ -147,6 +151,7 @@ class HeatmapBuilder:
             pyramid=True,
         )
         mask_builder.cleanup()
+
         return output_path
 
 
