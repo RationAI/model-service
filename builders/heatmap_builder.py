@@ -46,14 +46,13 @@ class HeatmapBuilder:
 
         model = serve.get_app_handle(model_id)
         model_config = await model.get_config.remote()
-        stride: int = round(stride_fraction * model_config["tile_size"])
+        tile_size: int = model_config["tile_size"]
+        output_tile_size: int = model_config["output_tile_size"]
+        n_channels: int = model_config["n_channels"]
+        stride: int = round(stride_fraction * tile_size)
 
         loop = asyncio.get_running_loop()
         tasks: set[asyncio.Task[Any]] = set()
-        mask_builder: MaskBuilder | None = None
-        mask_builder_lock = asyncio.Lock()
-        update_lock = asyncio.Lock()
-
         with (
             OpenSlide(slide_path) as slide,
             OpenSlide(tissue_mask_path) as tissue_slide,
@@ -69,9 +68,16 @@ class HeatmapBuilder:
             ]
             scale_x = tissue_extent_x / extent_x
             scale_y = tissue_extent_y / extent_y
+            mask_builder = MaskBuilder(
+                source_extents=(extent_y, extent_x),
+                source_tile_extent=tile_size,
+                output_tile_extent=output_tile_size,
+                stride=stride,
+                n_channels=n_channels,
+                storage="memmap",
+            )
 
             async def process_tile(x: int, y: int) -> None:
-                nonlocal mask_builder
                 tile = await loop.run_in_executor(
                     executor,
                     fetch_tissue_tile,
@@ -83,7 +89,7 @@ class HeatmapBuilder:
                     scale_x,
                     scale_y,
                     tissue_level,
-                    model_config["tile_size"],
+                    tile_size,
                 )
                 if tile is None:
                     return
@@ -98,34 +104,14 @@ class HeatmapBuilder:
                 else:
                     raise ValueError(f"Unexpected prediction shape: {arr.shape}")
 
-                n_channels = batch.shape[1]
-                output_tile_extent = batch.shape[2:]
-
-                if mask_builder is None:
-                    async with mask_builder_lock:
-                        if mask_builder is None:
-                            mask_builder = MaskBuilder(
-                                source_extents=(extent_y, extent_x),
-                                source_tile_extent=model_config["tile_size"],
-                                output_tile_extent=output_tile_extent,
-                                stride=stride,
-                                n_channels=n_channels,
-                                storage="memmap",
-                            )
-                assert mask_builder is not None
-
-                async with update_lock:
-                    await loop.run_in_executor(
-                        executor,
-                        lambda: mask_builder.update_batch(
-                            batch=batch,
-                            coords=np.array([[y, x]], dtype=np.int64),
-                        ),
-                    )
+                mask_builder.update_batch(
+                    batch=batch,
+                    coords=np.array([[y, x]], dtype=np.int64),
+                )
 
             for x, y in grid_tiles(
                 slide_extent=(extent_x, extent_y),
-                tile_extent=(model_config["tile_size"], model_config["tile_size"]),
+                tile_extent=(tile_size, tile_size),
                 stride=(stride, stride),
             ):
                 if len(tasks) >= self.max_concurrent_tasks:
@@ -141,28 +127,21 @@ class HeatmapBuilder:
                 for task in done:
                     task.result()
 
-        if mask_builder is None:
-            raise RuntimeError("No tiles produced predictions; heatmap not created.")
-
         try:
             result = np.nan_to_num(mask_builder.finalize(), nan=0.0, copy=False)
             vips_image = mask_builder.resize_to_source(result)
             vips_image = (vips_image * 255).cast(pyvips.BandFormat.UCHAR)
             Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-
-            await loop.run_in_executor(
-                None,
-                lambda: vips_image.tiffsave(
-                    output_path,
-                    bigtiff=True,
-                    compression=pyvips.enums.ForeignTiffCompression.DEFLATE,
-                    tile=True,
-                    tile_width=output_bigtiff_tile_width,
-                    tile_height=output_bigtiff_tile_height,
-                    xres=1000 / mpp_x,
-                    yres=1000 / mpp_y,
-                    pyramid=True,
-                ),
+            vips_image.tiffsave(
+                output_path,
+                bigtiff=True,
+                compression=pyvips.enums.ForeignTiffCompression.DEFLATE,
+                tile=True,
+                tile_width=output_bigtiff_tile_width,
+                tile_height=output_bigtiff_tile_height,
+                xres=1000 / mpp_x,
+                yres=1000 / mpp_y,
+                pyramid=True,
             )
         finally:
             mask_builder.cleanup()

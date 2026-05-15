@@ -9,6 +9,8 @@ from ray import serve
 
 class Config(TypedDict):
     tile_size: int
+    output_tile_size: int
+    n_channels: int
     mpp: float
     model: dict[str, Any]
     max_batch_size: int
@@ -29,6 +31,8 @@ class SemanticSegmentation:
     """Semantic segmentation for tissue tiles using ONNX Runtime with GPU and TensorRT support."""
 
     tile_size: int
+    output_tile_size: int
+    n_channels: int
 
     def __init__(self) -> None:
         import lz4.frame
@@ -42,6 +46,8 @@ class SemanticSegmentation:
         import onnxruntime as ort
 
         self.tile_size = config["tile_size"]
+        self.output_tile_size = config["output_tile_size"]
+        self.n_channels = config["n_channels"]
         self.mpp = config["mpp"]
 
         cache_path = config["trt_cache_path"]
@@ -116,8 +122,13 @@ class SemanticSegmentation:
         self.predict.set_batch_wait_timeout_s(config["batch_wait_timeout_s"])  # type: ignore[attr-defined]
 
     def get_config(self) -> dict[str, Any]:
-        """Return the current configuration (tile size and mpp)."""
-        return {"tile_size": self.tile_size, "mpp": self.mpp}
+        """Return the current configuration for builders."""
+        return {
+            "tile_size": self.tile_size,
+            "output_tile_size": self.output_tile_size,
+            "n_channels": self.n_channels,
+            "mpp": self.mpp,
+        }
 
     @serve.batch
     async def predict(

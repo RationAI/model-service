@@ -141,6 +141,22 @@ What happens with data:
 - Output tensor is flattened and returned as a Python list.
 - Ray Serve maps each list item back to the original HTTP request.
 
+### `get_config`: expose model settings for builders
+
+If your model is used by any Whole-Slide Inference builder (for example `HeatmapBuilder`), you must provide a `get_config` method that builders can call through a Serve handle. The builder uses this to read `tile_size`, `output_tile_size`, `n_channels`, and `mpp` so it can pick the right tiling grid and resolution.
+
+```python
+async def get_config(self) -> dict[str, Any]:
+  return {
+    "tile_size": self.tile_size,
+    "output_tile_size": self.output_tile_size,
+    "n_channels": self.n_channels,
+    "mpp": self.mpp,
+  }
+```
+
+The builder calls it with `await model.get_config.remote()`; keep it cheap and avoid any I/O.
+
 ### `root`: HTTP request parsing and serialization
 
 ```python
