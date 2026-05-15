@@ -38,7 +38,7 @@ class HeatmapBuilder:
         output_bigtiff_tile_height: int,
         output_bigtiff_tile_width: int,
     ) -> str:
-        from ratiopath.masks.mask_builders.mask_builder import MaskBuilder
+        from ratiopath.masks.mask_builders import MaskBuilder
         from ratiopath.openslide import OpenSlide
         from ratiopath.tiling import grid_tiles
 
