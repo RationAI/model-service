@@ -192,24 +192,29 @@ This exported symbol is what `import_path: models.my_model:app` points to in Hel
 
 If you are deploying a model that is a downstream head (e.g., an MLP or Attention layer trained on top of a foundation model like Virchow2 or Prov-GigaPath), you **do not** need to re-export the entire foundation model into your ONNX artifact. 
 
-Because foundation models are already deployed as independent services within the cluster, your model can directly invoke them via Ray Serve handles. In your `root` or `predict` method, simply call the foundation model first, then pass its output to your custom layers.
+Because foundation models are already deployed as independent services within the cluster, your model can directly invoke them via Ray Serve handles. In your `root` or `predict` method, call the foundation model first, then pass its output to your custom layers. If you call a foundation model's `predict` method directly, do **not** pass a raw `np.ndarray` image; first apply the same preprocessing/transforms that deployment expects, or call the model's ingress/request path instead.
 
 ```python
 # In your __init__ or reconfigure method:
 from ray import serve
 self.foundation_model = serve.get_app_handle("virchow2")
+self.foundation_transform = build_virchow2_transform()
 
 # In your request handler:
 @fastapi.post("/")
 async def root(self, request: Request):
-    # 1. Fetch raw image bytes from request
+    # 1. Fetch raw image bytes from request and decode to an image / np.ndarray
     ...
+
+    # 2. Apply the same transforms used by the foundation model deployment
+    image_tensor = self.foundation_transform(image)
+    if image_tensor.ndim == 3:
+        image_tensor = image_tensor.unsqueeze(0)
+
+    # 3. Call the foundation model with the transformed tensor batch
+    embedding = await self.foundation_model.predict.remote(image_tensor)
     
-    # 2. Call the foundation model via its Serve handle
-    # (assuming your custom model needs the raw `np.ndarray` image)
-    embedding = await self.foundation_model.predict.remote(image)
-    
-    # 3. Pass the embedding to your own model's predict endpoint
+    # 4. Pass the embedding to your own model's predict endpoint
     return await self.predict(embedding)
 ```
 
