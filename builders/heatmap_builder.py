@@ -76,75 +76,75 @@ class HeatmapBuilder:
                 n_channels=n_channels,
                 storage="memmap",
             )
+            try:
 
-            async def process_tile(x: int, y: int) -> None:
-                tile = await loop.run_in_executor(
-                    executor,
-                    fetch_tissue_tile,
-                    slide,
-                    tissue_slide,
-                    x,
-                    y,
-                    level,
-                    scale_x,
-                    scale_y,
-                    tissue_level,
-                    tile_size,
-                )
-                if tile is None:
-                    return
-
-                prediction = await model.predict.remote(tile)
-                arr = np.asarray(prediction, dtype=np.float32)
-
-                if arr.ndim == 2:
-                    batch = arr[np.newaxis, np.newaxis, ...]
-                elif arr.ndim == 3:
-                    batch = arr[np.newaxis, ...]
-                else:
-                    raise ValueError(f"Unexpected prediction shape: {arr.shape}")
-
-                mask_builder.update_batch(
-                    batch=batch,
-                    coords=np.array([[y, x]], dtype=np.int64),
-                )
-
-            for x, y in grid_tiles(
-                slide_extent=(extent_x, extent_y),
-                tile_extent=(tile_size, tile_size),
-                stride=(stride, stride),
-            ):
-                if len(tasks) >= self.max_concurrent_tasks:
-                    done, tasks = await asyncio.wait(
-                        tasks, return_when=asyncio.FIRST_COMPLETED
+                async def process_tile(x: int, y: int) -> None:
+                    tile = await loop.run_in_executor(
+                        executor,
+                        fetch_tissue_tile,
+                        slide,
+                        tissue_slide,
+                        x,
+                        y,
+                        level,
+                        scale_x,
+                        scale_y,
+                        tissue_level,
+                        tile_size,
                     )
+                    if tile is None:
+                        return
+
+                    prediction = await model.predict.remote(tile)
+                    arr = np.asarray(prediction, dtype=np.float32)
+
+                    if arr.ndim == 2:
+                        batch = arr[np.newaxis, np.newaxis, ...]
+                    elif arr.ndim == 3:
+                        batch = arr[np.newaxis, ...]
+                    else:
+                        raise ValueError(f"Unexpected prediction shape: {arr.shape}")
+
+                    mask_builder.update_batch(
+                        batch=batch,
+                        coords=np.array([[y, x]], dtype=np.int64),
+                    )
+
+                for x, y in grid_tiles(
+                    slide_extent=(extent_x, extent_y),
+                    tile_extent=(tile_size, tile_size),
+                    stride=(stride, stride),
+                ):
+                    if len(tasks) >= self.max_concurrent_tasks:
+                        done, tasks = await asyncio.wait(
+                            tasks, return_when=asyncio.FIRST_COMPLETED
+                        )
+                        for task in done:
+                            task.result()
+                    tasks.add(asyncio.create_task(process_tile(x, y)))
+
+                if tasks:
+                    done, _ = await asyncio.wait(tasks)
                     for task in done:
                         task.result()
-                tasks.add(asyncio.create_task(process_tile(x, y)))
 
-            if tasks:
-                done, _ = await asyncio.wait(tasks)
-                for task in done:
-                    task.result()
-
-        try:
-            result = np.nan_to_num(mask_builder.finalize(), nan=0.0, copy=False)
-            vips_image = mask_builder.resize_to_source(result)
-            vips_image = (vips_image * 255).cast(pyvips.BandFormat.UCHAR)
-            Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-            vips_image.tiffsave(
-                output_path,
-                bigtiff=True,
-                compression=pyvips.enums.ForeignTiffCompression.DEFLATE,
-                tile=True,
-                tile_width=output_bigtiff_tile_width,
-                tile_height=output_bigtiff_tile_height,
-                xres=1000 / mpp_x,
-                yres=1000 / mpp_y,
-                pyramid=True,
-            )
-        finally:
-            mask_builder.cleanup()
+                result = np.nan_to_num(mask_builder.finalize(), nan=0.0, copy=False)
+                vips_image = mask_builder.resize_to_source(result)
+                vips_image = (vips_image * 255).cast(pyvips.BandFormat.UCHAR)
+                Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+                vips_image.tiffsave(
+                    output_path,
+                    bigtiff=True,
+                    compression=pyvips.enums.ForeignTiffCompression.DEFLATE,
+                    tile=True,
+                    tile_width=output_bigtiff_tile_width,
+                    tile_height=output_bigtiff_tile_height,
+                    xres=1000 / mpp_x,
+                    yres=1000 / mpp_y,
+                    pyramid=True,
+                )
+            finally:
+                mask_builder.cleanup()
 
         return output_path
 
