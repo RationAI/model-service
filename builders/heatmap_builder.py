@@ -95,7 +95,7 @@ class HeatmapBuilder:
                     if tile is None:
                         return
 
-                    prediction = await model.predict.remote(tile.transpose(2, 0, 1))
+                    prediction = await model.predict.remote(tile)
                     arr = np.asarray(prediction, dtype=np.float32)
 
                     if arr.ndim == 2:
