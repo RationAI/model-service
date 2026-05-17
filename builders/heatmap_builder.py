@@ -128,7 +128,8 @@ class HeatmapBuilder:
                     for task in done:
                         task.result()
 
-                result = np.nan_to_num(mask_builder.finalize(), nan=0.0, copy=False)
+                result = np.asarray(mask_builder.finalize())
+                np.nan_to_num(result, nan=0.0, copy=False)
                 vips_image = mask_builder.resize_to_source(result)
                 vips_image = (vips_image * 255).cast(pyvips.BandFormat.UCHAR)
                 Path(output_path).parent.mkdir(parents=True, exist_ok=True)
