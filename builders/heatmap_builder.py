@@ -128,12 +128,10 @@ class HeatmapBuilder:
                     for task in done:
                         task.result()
 
-                result = np.asarray(mask_builder.finalize())
+                result = np.asarray(mask_builder.finalize()["mask"])
 
                 if result.ndim == 2:
                     result = result[np.newaxis, ...]
-                else:
-                    raise ValueError(f"Unexpected shape: {result.shape}")
 
                 vips_image = mask_builder.resize_to_source(result)
                 vips_image = (vips_image * 255).cast(pyvips.BandFormat.UCHAR)
