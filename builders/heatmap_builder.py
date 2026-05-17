@@ -130,7 +130,6 @@ class HeatmapBuilder:
 
                 result = np.asarray(mask_builder.finalize()["mask"])
 
-
                 vips_image = mask_builder.resize_to_source(result)
                 vips_image = (vips_image * 255).cast(pyvips.BandFormat.UCHAR)
                 Path(output_path).parent.mkdir(parents=True, exist_ok=True)
