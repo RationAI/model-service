@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import Any, TypedDict
 
 import numpy as np
-import pyvips
 from fastapi import FastAPI
 from ray import serve
 
@@ -38,6 +37,7 @@ class HeatmapBuilder:
         output_bigtiff_tile_height: int,
         output_bigtiff_tile_width: int,
     ) -> str:
+        import pyvips
         from ratiopath.masks.mask_builders import MaskBuilder
         from ratiopath.openslide import OpenSlide
         from ratiopath.tiling import grid_tiles
