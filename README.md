@@ -4,15 +4,17 @@ Model deployment infrastructure for RationAI using Ray Serve on Kubernetes.
 
 This repository contains:
 
-- A Helm chart (`helm/rayservice/`) that renders and deploys a KubeRay `RayService`.
-- A static RayService manifest (`ray-service.yaml`) for reference/manual apply workflows.
-- Model implementations under `models/` (reference: `models/binary_classifier.py`).
-- Documentation under `docs/` (MkDocs).
+- `builders/`: WSI output aggregation services (e.g., `heatmap_builder.py`).
+- `docker/`: Dockerfiles for building CPU and GPU environments.
+- `docs/`: MkDocs documentation and architecture guides.
+- `helm/rayservice/`: A Helm chart that renders and deploys a KubeRay `RayService`.
+- `models/`: Python entrypoints for model implementations (e.g., `binary_classifier.py`, `virchow2.py`).
 
 ## Documentation
 
 - MkDocs content: `docs/`
 - Key pages:
+  - `docs/available-models.md`
   - `docs/get-started/quick-start.md`
   - `docs/guides/deployment-guide.md`
   - `docs/guides/adding-models.md`

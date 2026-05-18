@@ -141,6 +141,22 @@ What happens with data:
 - Output tensor is flattened and returned as a Python list.
 - Ray Serve maps each list item back to the original HTTP request.
 
+### `get_config`: expose model settings for builders
+
+If your model is used by any Whole-Slide Inference builder (for example `HeatmapBuilder`), you must provide a `get_config` method that builders can call through a Serve handle. The builder uses this to read `tile_size`, `output_tile_size`, `n_channels`, and `mpp` so it can pick the right tiling grid and resolution.
+
+```python
+async def get_config(self) -> dict[str, Any]:
+  return {
+    "tile_size": self.tile_size,
+    "output_tile_size": self.output_tile_size,
+    "n_channels": self.n_channels,
+    "mpp": self.mpp,
+  }
+```
+
+The builder calls it with `await model.get_config.remote()`; keep it cheap and avoid any I/O.
+
 ### `root`: HTTP request parsing and serialization
 
 ```python
@@ -171,6 +187,45 @@ app = MyModel.bind()
 ```
 
 This exported symbol is what `import_path: models.my_model:app` points to in Helm.
+
+### Using Foundation Models from Your Model
+
+If you are deploying a model that is a downstream head (e.g., an MLP or Attention layer trained on top of a foundation model like Virchow2 or Prov-GigaPath), you **do not** need to re-export the entire foundation model into your ONNX artifact. 
+
+Because foundation models are already deployed as independent services within the cluster, your model can directly invoke them via Ray Serve handles. In your `root` or `predict` method, call the foundation model first, then pass its output to your custom layers. If you call a foundation model's `predict` method directly, do **not** pass a raw `np.ndarray` image; first apply the same preprocessing/transforms that deployment expects, or call the model's ingress/request path instead.
+
+```python
+# In your __init__ or reconfigure method:
+from ray import serve
+self.foundation_model = serve.get_app_handle("virchow2")
+self.foundation_transform = build_virchow2_transform()
+
+# In your request handler:
+@fastapi.post("/")
+async def root(self, request: Request):
+    # 1. Fetch raw image bytes from request and decode to an image / np.ndarray
+    ...
+
+    # 2. Apply the same transforms used by the foundation model deployment
+    image_tensor = self.foundation_transform(image)
+    if image_tensor.ndim == 3:
+        image_tensor = image_tensor.unsqueeze(0)
+
+    # 3. Call the foundation model with the transformed tensor batch
+    embedding = await self.foundation_model.predict.remote(image_tensor)
+    
+    # 4. Pass the embedding to your own model's predict endpoint
+    return await self.predict(embedding)
+```
+
+## Whole-Slide (WSI) Inference and Output Builders
+
+When predicting on an entire Whole-Slide Image (WSI):
+
+1. **Heatmaps:** If your model's WSI output should be a spatial heatmap (e.g., probability maps or segmentation masks overlaying the WSI), you **do not need to implement WSI logic**. The cluster already provides a universal `HeatmapBuilder` service (running under `/heatmap-builder`). Users can pass your model's ID to the heatmap builder via the SDK, and it will tile the image, aggregate all localized predictions seamlessly, and output a multi-resolution BigTIFF mask automatically.
+
+2. **Custom WSI Aggregations (Non-Heatmap Outputs):** If your model generates something else across the entire slide (for example, a single slide-level scalar score, diagnostic classification, custom tabular statistics, embedded feature bags), you must **implement your own WSI aggregator service**. You should create a custom Application (similar to `HeatmapBuilder`) that takes paths to WSI files, iterates through the WSI tiles querying your base model for each tile, and correctly aggregates the results into your desired slide-level output format.
+
 
 ## Next Step
 

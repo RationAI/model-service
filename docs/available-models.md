@@ -11,6 +11,7 @@ All endpoints receive and return data over HTTP using `POST` requests. To minimi
 | **Prostate Classifier 1** | `/prostate-classifier-1` | Binary Classification         |
 | **Episeg 1**              | `/episeg-1`              | Semantic Segmentation         |
 | **Virchow2**              | `/virchow2`              | Foundation Model / Embeddings |
+| **Prov-GigaPath**         | `/prov-gigapath`         | Foundation Model / Embeddings |
 | **Heatmap Builder**       | `/heatmap-builder`       | Pipeline / Custom Builder     |
 
 ---
@@ -80,7 +81,31 @@ with Client() as client:
   print(emb.shape)
 ```
 
-### 4. Heatmap Builder (`/heatmap-builder`)
+### 4. Prov-GigaPath (`/prov-gigapath`)
+
+A foundation model for pathology tile embeddings (Prov-GigaPath).
+
+- **Input**: LZ4-compressed raw bytes of a tissue tile image (`uint8`, shape `(tile_size, tile_size, 3)`).
+- **Output**: Output tensor matching the user's requested precision.
+- **Headers**:
+  - `x-output-dtype` (optional, default: `float32`): Sets the return precision (for example `float16`).
+- **SDK example**:
+
+```python
+from rationai import Client
+import numpy as np
+
+with Client() as client:
+  emb = client.models.embed_image(
+    model="prov-gigapath",
+    image=image,
+    output_dtype=np.float16,
+    timeout=30.0,
+  )
+  print(emb.shape)
+```
+
+### 5. Heatmap Builder (`/heatmap-builder`)
 
 A processing pipeline element for aggregating inferences into spatial heatmaps.
 
