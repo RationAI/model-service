@@ -29,7 +29,7 @@ class ThroughputRunner:
     ) -> Response:
         cmd = [
             sys.executable,
-            "tests/benchmark/perf_throughput.py",
+            "tests/perf_throughput.py",
             "--duration-s",
             str(duration_s),
             "--concurrency",

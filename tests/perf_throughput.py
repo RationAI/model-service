@@ -15,6 +15,7 @@ DEFAULT_MODELS = [
     ("prostate-classifier-1", "binary", 512),
     ("episeg-1", "semantic", 1024),
     ("virchow2", "embed", 224),
+    ("prov-gigapath", "embed", 224),
 ]
 POOL_SIZE_DEFAULT = 64
 
