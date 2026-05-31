@@ -55,4 +55,4 @@ class ThroughputRunner:
         return Response(content=output, media_type="text/plain")
 
 
-app = ThroughputRunner.bind()
+app = ThroughputRunner.bind()  # type: ignore[attr-defined]

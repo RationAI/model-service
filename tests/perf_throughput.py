@@ -6,6 +6,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from threading import Lock
+from typing import TypedDict
 
 import numpy as np
 from rationai import Client
@@ -18,6 +19,20 @@ DEFAULT_MODELS = [
     ("prov-gigapath", "embed", 224),
 ]
 POOL_SIZE_DEFAULT = 64
+
+
+class ModelResult(TypedDict):
+    name: str
+    model_type: str
+    tile_size: int
+    elapsed_s: float
+    ok: int
+    fail_503: int
+    fail_other: int
+    throughput: float
+    p50: float
+    p95: float
+    p99: float
 
 
 @dataclass
@@ -41,7 +56,7 @@ class Stats:
 def _models_base_url() -> str:
     return os.environ.get(
         "MODEL_SERVICE_MODELS_BASE_URL",
-        "http://rayservice-model-serve-svc.rationai-jobs-ns.svc.cluster.local:8000",
+        "http://rayservice-model-tests-serve-svc.rationai-jobs-ns.svc.cluster.local:8000",
     )
 
 
@@ -143,7 +158,7 @@ def run_model(
     timeout: float,
     pool_size: int,
     models_base_url: str,
-) -> dict[str, object]:
+) -> ModelResult:
     if pool_size <= 0:
         raise ValueError("pool_size must be > 0")
 
@@ -248,7 +263,7 @@ def main() -> None:
     print(f"Timeout:         {args.timeout}s")
     print()
 
-    results = []
+    results: list[ModelResult] = []
     for name, model_type, tile_size in models:
         if args.wait_ready:
             wait_for_ready(

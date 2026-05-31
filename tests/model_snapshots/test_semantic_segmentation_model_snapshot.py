@@ -5,7 +5,7 @@ import pytest
 from tests.model_snapshots._shared import run_semantic_segmentation_case
 
 
-@pytest.mark.parametrize(
+@pytest.mark.parametrize(  # type: ignore[untyped-decorator]
     "label, slide_path, x, y",
     [
         (

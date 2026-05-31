@@ -19,7 +19,6 @@ class TestRunner:
 
     @fastapi.post("/")
     def run(self) -> Response:
-
         result = subprocess.run(
             [
                 sys.executable,
@@ -42,4 +41,4 @@ class TestRunner:
         return Response(content=output, media_type="text/plain")
 
 
-app = TestRunner.bind()
+app = TestRunner.bind()  # type: ignore[attr-defined]
