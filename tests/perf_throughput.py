@@ -42,7 +42,7 @@ class Stats:
 def _models_base_url() -> str:
     return os.environ.get(
         "MODEL_SERVICE_MODELS_BASE_URL",
-        "http://rayservice-model-serve-svc.rationai-jobs-ns.svc.cluster.local:8000",
+        "http://rayservice-model-tests-serve-svc.rationai-jobs-ns.svc.cluster.local:8000",
     )
 
 

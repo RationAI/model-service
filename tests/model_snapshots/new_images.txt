@@ -1,0 +1,6 @@
+# New images and coordinates
+# Format: label | slide_path | x | y | tile_size | level | notes
+prostate_positive | /mnt/data/MOU/prostate/tile_level_annotations/P-2016_2386-06-1.mrxs | 43390 | 45865 | 512 | 0 | prostate-classifier-1 positive
+prostate_negative | /mnt/data/MOU/prostate/tile_level_annotations/P-2016_0845-02-0.mrxs | 32950 | 108990 | 512 | 0 | prostate-classifier-1 negative
+prostate | /mnt/data/MOU/prostate/tile_level_annotations/P-2016_1367-01-0.mrxs | 40000 | 70000 | 224 | 0 | virchow2 embed
+colorectum_kos04 | /mnt/data/MOU/colorectum/tissue_microarray/he/KOS04.mrxs | 46000 | 82400 | 1024 | 0 | episeg-1 semantic

@@ -1,7 +1,8 @@
 from pathlib import Path
 
 import pytest
-from _shared import run_embed_case
+
+from tests.model_snapshots._shared import run_embed_case
 
 
 @pytest.mark.parametrize(

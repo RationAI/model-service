@@ -2,7 +2,8 @@ import json
 from pathlib import Path
 
 import pytest
-from _shared import run_binary_classifier_case
+
+from tests.model_snapshots._shared import run_binary_classifier_case
 
 
 BINARY_POSITIVE_THRESHOLD = 0.5
@@ -32,11 +33,6 @@ def test_prostate_classifier_snapshot(
 ) -> None:
     model_id = "prostate-classifier-1"
     json_path = Path(f"/mnt/test_refs/{label}_{model_id}_expected.json")
-
-    if not json_path.exists():
-        pytest.skip(
-            f"Reference file {json_path} missing. Run generate_references.py first."
-        )
 
     with json_path.open() as f:
         reference = json.load(f)
