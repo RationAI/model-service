@@ -55,6 +55,8 @@ template:
             mountPath: /mnt/cache
           - name: huggingface-cache
             mountPath: /mnt/huggingface_cache
+          - name: test-refs
+            mountPath: /mnt/test_refs
     volumes:
       - name: data
         persistentVolumeClaim:
@@ -74,3 +76,6 @@ template:
       - name: huggingface-cache
         persistentVolumeClaim:
           claimName: huggingface-cache-pvc
+      - name: test-refs
+        persistentVolumeClaim:
+          claimName: model-test-refs-pvc
