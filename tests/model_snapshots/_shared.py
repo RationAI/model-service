@@ -13,8 +13,12 @@ from ratiopath.openslide import OpenSlide
 def _models_base_url() -> str:
     return os.environ.get(
         "MODEL_SERVICE_MODELS_BASE_URL",
-        "http://rayservice-model-serve-svc.rationai-jobs-ns.svc.cluster.local:8000",
+        "http://rayservice-model-tests-serve-svc.rationai-jobs-ns.svc.cluster.local:8000",
     )
+
+
+def test_refs_dir() -> Path:
+    return Path(os.environ.get("MODEL_SERVICE_TEST_REFS_DIR", "/mnt/test_refs"))
 
 
 def _read_tile_at(
@@ -99,6 +103,9 @@ def run_semantic_segmentation_case(
     with Client(models_base_url=_models_base_url(), timeout=timeout_s) as client:
         actual = np.asarray(client.models.segment_image(model=model_id, image=tile))
 
+    if actual.shape != expected.shape:
+        pytest.fail(f"Shape mismatch: expected={expected.shape}, actual={actual.shape}")
+
     max_diff = np.abs(actual.astype(np.float32) - expected.astype(np.float32)).max()
 
     if actual.ndim == 4:
@@ -114,9 +121,6 @@ def run_semantic_segmentation_case(
     max_val = float(stats_slice.max())
     frac_05 = float((stats_slice >= 0.5).mean())
     name = case_name or "case"
-
-    if actual.shape != expected.shape:
-        pytest.fail(f"Shape mismatch: expected={expected.shape}, actual={actual.shape}")
 
     close_mask = np.isclose(actual, expected, rtol=rtol, atol=atol)
     if not close_mask.all():
@@ -183,15 +187,15 @@ def run_embed_case(
             .astype(np.float32)
         )
 
+    if actual.shape != expected.shape:
+        pytest.fail(f"Shape mismatch: expected={expected.shape}, actual={actual.shape}")
+
     similarity = float(
         np.dot(actual, expected) / (np.linalg.norm(actual) * np.linalg.norm(expected))
     )
     actual_norm = float(np.linalg.norm(actual))
     expected_norm = float(np.linalg.norm(expected))
     name = case_name or "case"
-
-    if actual.shape != expected.shape:
-        pytest.fail(f"Shape mismatch: expected={expected.shape}, actual={actual.shape}")
 
     if similarity < min_cosine_similarity:
         pytest.fail(

@@ -6,7 +6,6 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from threading import Lock
-from typing import TypedDict
 
 import numpy as np
 from rationai import Client
@@ -19,20 +18,6 @@ DEFAULT_MODELS = [
     ("prov-gigapath", "embed", 224),
 ]
 POOL_SIZE_DEFAULT = 64
-
-
-class ModelResult(TypedDict):
-    name: str
-    model_type: str
-    tile_size: int
-    elapsed_s: float
-    ok: int
-    fail_503: int
-    fail_other: int
-    throughput: float
-    p50: float
-    p95: float
-    p99: float
 
 
 @dataclass
@@ -102,6 +87,8 @@ def wait_for_ready(
                 print(f"{model_id} ready after {time.perf_counter() - start:.1f}s")
             return
         except Exception as exc:
+            if isinstance(exc, ValueError):
+                raise
             status_code = getattr(getattr(exc, "response", None), "status_code", None)
             if status_code not in (None, 503, 504):
                 raise
@@ -158,7 +145,7 @@ def run_model(
     timeout: float,
     pool_size: int,
     models_base_url: str,
-) -> ModelResult:
+) -> dict[str, object]:
     if pool_size <= 0:
         raise ValueError("pool_size must be > 0")
 
@@ -263,7 +250,7 @@ def main() -> None:
     print(f"Timeout:         {args.timeout}s")
     print()
 
-    results: list[ModelResult] = []
+    results = []
     for name, model_type, tile_size in models:
         if args.wait_ready:
             wait_for_ready(

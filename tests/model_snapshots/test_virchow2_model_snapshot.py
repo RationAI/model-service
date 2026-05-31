@@ -1,11 +1,9 @@
-from pathlib import Path
-
 import pytest
 
-from tests.model_snapshots._shared import run_embed_case
+from tests.model_snapshots._shared import run_embed_case, test_refs_dir
 
 
-@pytest.mark.parametrize(  # type: ignore[untyped-decorator]
+@pytest.mark.parametrize(
     "label, slide_path, x, y",
     [
         (
@@ -18,7 +16,7 @@ from tests.model_snapshots._shared import run_embed_case
 )
 def test_virchow2(label: str, slide_path: str, x: int, y: int) -> None:
     model_id = "virchow2"
-    expected_array_path = Path(f"/mnt/test_refs/{label}_{model_id}_expected.npy")
+    expected_array_path = test_refs_dir() / f"{label}_{model_id}_expected.npy"
 
     run_embed_case(
         model_id=model_id,

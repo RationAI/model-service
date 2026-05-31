@@ -1,36 +1,22 @@
 import json
 import os
-from pathlib import Path
-from typing import TypedDict
 
 import numpy as np
 from rationai import Client
 
-from tests.model_snapshots._shared import _read_tile_at
+from tests.model_snapshots._shared import _read_tile_at, test_refs_dir
 
 
-OUT_DIR = Path("/mnt/test_refs")
+OUT_DIR = test_refs_dir()
 MODELS_BASE_URL = os.environ.get(
     "MODEL_SERVICE_MODELS_BASE_URL",
     "http://rayservice-model-tests-serve-svc.rationai-jobs-ns.svc.cluster.local:8000",
 )
 BINARY_POSITIVE_THRESHOLD = 0.5
 
-
-class CaseConfig(TypedDict):
-    label: str
-    slide_path: str
-    model_id: str
-    type: str
-    tile_size: int
-    level: int
-    x: int
-    y: int
-
-
 # Keep only one active case here. Store other candidate slides in new_images.txt
 # and swap them in when you want to regenerate a different reference.
-ACTIVE_CASE: CaseConfig = {
+ACTIVE_CASE = {
     "label": "prov-gigapath",
     "slide_path": "/mnt/data/MOU/prostate/tile_level_annotations/P-2016_1367-01-0.mrxs",
     "model_id": "prov-gigapath",
@@ -41,7 +27,7 @@ ACTIVE_CASE: CaseConfig = {
     "y": 70000,
 }
 
-CASES: list[CaseConfig] = [ACTIVE_CASE]
+CASES = [ACTIVE_CASE]
 
 
 def generate_references() -> None:
@@ -68,7 +54,9 @@ def generate_references() -> None:
             try:
                 if mtype == "binary":
                     score = float(
-                        client.models.classify_image(model=model_id, image=tile)
+                        client.models.classify_image(
+                            model=model_id, image=tile, timeout=600
+                        )
                     )
                     out_file = OUT_DIR / f"{label}_{model_id}_expected.json"
                     with out_file.open("w") as f:
@@ -93,7 +81,9 @@ def generate_references() -> None:
 
                 elif mtype == "semantic":
                     arr = np.asarray(
-                        client.models.segment_image(model=model_id, image=tile)
+                        client.models.segment_image(
+                            model=model_id, image=tile, timeout=1200
+                        )
                     )
                     out_file = OUT_DIR / f"{label}_{model_id}_expected.npy"
                     np.save(out_file, arr)
@@ -101,7 +91,9 @@ def generate_references() -> None:
 
                 elif mtype == "embed":
                     arr = np.asarray(
-                        client.models.embed_image(model=model_id, image=tile)
+                        client.models.embed_image(
+                            model=model_id, image=tile, timeout=1200
+                        )
                     )
                     out_file = OUT_DIR / f"{label}_{model_id}_expected.npy"
                     np.save(out_file, arr)
