@@ -11,21 +11,21 @@ from tests.model_snapshots._shared import _read_tile_at
 OUT_DIR = Path("/mnt/test_refs")
 MODELS_BASE_URL = os.environ.get(
     "MODEL_SERVICE_MODELS_BASE_URL",
-    "http://rayservice-model-tests-serve-svc.rationai-jobs-ns.svc.cluster.local:8000",
+    "http://rayservice-model-serve-svc.rationai-jobs-ns.svc.cluster.local:8000",
 )
 BINARY_POSITIVE_THRESHOLD = 0.5
 
 # Keep only one active case here. Store other candidate slides in new_images.txt
 # and swap them in when you want to regenerate a different reference.
 ACTIVE_CASE = {
-    "label": "colorectum_kos04",
-    "slide_path": "/mnt/data/MOU/colorectum/tissue_microarray/he/KOS04.mrxs",
-    "model_id": "episeg-1",
-    "type": "semantic",
-    "tile_size": 1024,
+    "label": "prov-gigapath",
+    "slide_path": "/mnt/data/MOU/prostate/tile_level_annotations/P-2016_1367-01-0.mrxs",
+    "model_id": "prov-gigapath",
+    "type": "embed",
+    "tile_size": 224,
     "level": 0,
-    "x": 46000,
-    "y": 82400,
+    "x": 40000,
+    "y": 70000,
 }
 
 CASES = [ACTIVE_CASE]

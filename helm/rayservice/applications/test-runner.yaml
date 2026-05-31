@@ -2,7 +2,7 @@
   import_path: builders.test_runner:app
   route_prefix: /run-tests
   runtime_env:
-    working_dir: https://github.com/RationAI/model-service/archive/refs/heads/feature/tests.zip?v10
+    working_dir: https://github.com/RationAI/model-service/archive/refs/heads/main.zip
     pip:
       - git+https://github.com/RationAI/rationai-sdk-python.git
   deployments:

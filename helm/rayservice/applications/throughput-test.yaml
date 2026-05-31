@@ -2,7 +2,7 @@
   import_path: builders.throughput_runner:app
   route_prefix: /run-throughput
   runtime_env:
-    working_dir: https://github.com/RationAI/model-service/archive/refs/heads/feature/tests.zip?v1
+    working_dir: https://github.com/RationAI/model-service/archive/refs/heads/main.zip
     pip:
       - git+https://github.com/RationAI/rationai-sdk-python.git
   deployments:
