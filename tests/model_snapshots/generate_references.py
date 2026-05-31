@@ -1,5 +1,6 @@
 import json
 import os
+from typing import TypedDict
 
 import numpy as np
 from rationai import Client
@@ -14,9 +15,21 @@ MODELS_BASE_URL = os.environ.get(
 )
 BINARY_POSITIVE_THRESHOLD = 0.5
 
+
+class CaseConfig(TypedDict):
+    label: str
+    slide_path: str
+    model_id: str
+    type: str
+    tile_size: int
+    level: int
+    x: int
+    y: int
+
+
 # Keep only one active case here. Store other candidate slides in new_images.txt
 # and swap them in when you want to regenerate a different reference.
-ACTIVE_CASE = {
+ACTIVE_CASE: CaseConfig = {
     "label": "prov-gigapath",
     "slide_path": "/mnt/data/MOU/prostate/tile_level_annotations/P-2016_1367-01-0.mrxs",
     "model_id": "prov-gigapath",
@@ -27,7 +40,7 @@ ACTIVE_CASE = {
     "y": 70000,
 }
 
-CASES = [ACTIVE_CASE]
+CASES: list[CaseConfig] = [ACTIVE_CASE]
 
 
 def generate_references() -> None:
