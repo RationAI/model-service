@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from time import perf_counter
 
 import numpy as np
 import pytest
@@ -49,9 +48,7 @@ def run_binary_classifier_case(
     tile = _read_tile_at(slide_path, x, y, tile_size, level)
 
     with Client(models_base_url=_models_base_url(), timeout=timeout_s) as client:
-        t0 = perf_counter()
         actual_score = float(client.models.classify_image(model=model_id, image=tile))
-        elapsed = perf_counter() - t0
 
     delta = actual_score - expected_score
     name = case_name or "case"
@@ -100,9 +97,7 @@ def run_semantic_segmentation_case(
     expected = np.load(expected_array_path)
 
     with Client(models_base_url=_models_base_url(), timeout=timeout_s) as client:
-        t0 = perf_counter()
         actual = np.asarray(client.models.segment_image(model=model_id, image=tile))
-        elapsed = perf_counter() - t0
 
     max_diff = np.abs(actual.astype(np.float32) - expected.astype(np.float32)).max()
 
@@ -182,13 +177,11 @@ def run_embed_case(
     expected = np.load(expected_array_path).flatten().astype(np.float32)
 
     with Client(models_base_url=_models_base_url(), timeout=timeout_s) as client:
-        t0 = perf_counter()
         actual = (
             np.asarray(client.models.embed_image(model=model_id, image=tile))
             .flatten()
             .astype(np.float32)
         )
-        elapsed = perf_counter() - t0
 
     similarity = float(
         np.dot(actual, expected) / (np.linalg.norm(actual) * np.linalg.norm(expected))

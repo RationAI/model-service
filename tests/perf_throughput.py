@@ -35,9 +35,7 @@ class Stats:
     def percentile(self, p: float) -> float:
         if not self.latencies:
             return 0.0
-        s = sorted(self.latencies)
-        idx = int(len(s) * p / 100)
-        return s[min(idx, len(s) - 1)]
+        return float(np.percentile(self.latencies, p))
 
 
 def _models_base_url() -> str:
@@ -49,11 +47,10 @@ def _models_base_url() -> str:
 
 def make_pool(tile_size: int, n: int) -> list[np.ndarray]:
     rng = np.random.default_rng(seed=42)
-    pool = []
-    for _ in range(n):
-        img = rng.integers(0, 255, (tile_size, tile_size, 3), dtype=np.uint8)
-        pool.append(img)
-    return pool
+    return [
+        rng.integers(0, 256, (tile_size, tile_size, 3), dtype=np.uint8)
+        for _ in range(n)
+    ]
 
 
 def _call_model(
@@ -78,8 +75,7 @@ def wait_for_ready(
     wait_timeout_s: float,
     wait_interval_s: float,
 ) -> None:
-    pool = make_pool(tile_size, 1)
-    image = pool[0]
+    image = make_pool(tile_size, 1)[0]
     start = time.perf_counter()
     reported = False
 
@@ -88,8 +84,7 @@ def wait_for_ready(
             with Client(models_base_url=models_base_url, timeout=timeout) as client:
                 _call_model(client, model_id, model_type, image)
             if reported:
-                waited = time.perf_counter() - start
-                print(f"{model_id} ready after {waited:.1f}s")
+                print(f"{model_id} ready after {time.perf_counter() - start:.1f}s")
             return
         except Exception as exc:
             status_code = getattr(getattr(exc, "response", None), "status_code", None)
@@ -98,7 +93,8 @@ def wait_for_ready(
             if not reported:
                 print(f"{model_id} waiting for readiness...")
                 reported = True
-            if wait_timeout_s > 0 and (time.perf_counter() - start) >= wait_timeout_s:
+            elapsed = time.perf_counter() - start
+            if wait_timeout_s > 0 and elapsed >= wait_timeout_s:
                 raise RuntimeError(
                     f"{model_id} not ready after {wait_timeout_s:.1f}s"
                 ) from exc
@@ -147,7 +143,7 @@ def run_model(
     timeout: float,
     pool_size: int,
     models_base_url: str,
-) -> dict:
+) -> dict[str, object]:
     if pool_size <= 0:
         raise ValueError("pool_size must be > 0")
 
@@ -186,6 +182,7 @@ def run_model(
         "throughput": throughput,
         "p50": stats.percentile(50),
         "p95": stats.percentile(95),
+        "p99": stats.percentile(99),
     }
 
 
@@ -278,17 +275,24 @@ def main() -> None:
             f"{name} stats: ok={result['ok']} fail_503={result['fail_503']} "
             f"fail_other={result['fail_other']} elapsed={result['elapsed_s']:.2f}s "
             f"img/s={result['throughput']:.2f} p50={result['p50']:.3f}s "
-            f"p95={result['p95']:.3f}s"
+            f"p95={result['p95']:.3f}s p99={result['p99']:.3f}s"
         )
 
     print("Summary")
-    print("name".ljust(28), "img/s".rjust(10), "p50".rjust(10), "p95".rjust(10))
+    print(
+        "name".ljust(28),
+        "img/s".rjust(10),
+        "p50".rjust(10),
+        "p95".rjust(10),
+        "p99".rjust(10),
+    )
     for r in results:
         print(
             r["name"].ljust(28),
             f"{r['throughput']:.2f}".rjust(10),
             f"{r['p50']:.3f}".rjust(10),
             f"{r['p95']:.3f}".rjust(10),
+            f"{r['p99']:.3f}".rjust(10),
         )
 
 
