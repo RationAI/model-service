@@ -1,0 +1,5 @@
+pvcs:
+  data: test-data-storage-pvc
+  publicData: test-data-storage-pvc
+  projects: test-data-storage-pvc
+  biopticTree: test-data-storage-pvc

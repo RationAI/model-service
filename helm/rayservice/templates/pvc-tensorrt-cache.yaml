@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Values.pvcs.tensorrtCache.claimName }}
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: {{ .Values.pvcs.tensorrtCache.storage }}
+  storageClassName: {{ .Values.pvcs.storageClassName }}

@@ -48,19 +48,19 @@ template:
     volumes:
       - name: data
         persistentVolumeClaim:
-          claimName: data-ro
+          claimName: {{ .Values.pvcs.data }}
       - name: public-data
         persistentVolumeClaim:
-          claimName: rationai-data-ro-pvc-jobs
+          claimName: {{ .Values.pvcs.publicData }}
       - name: projects
         persistentVolumeClaim:
-          claimName: projects-rw
+          claimName: {{ .Values.pvcs.projects }}
       - name: bioptic-tree
         persistentVolumeClaim:
-          claimName: bioptictree-ro
+          claimName: {{ .Values.pvcs.biopticTree }}
       - name: trt-cache-volume
         persistentVolumeClaim:
-          claimName: tensorrt-cache-pvc
+          claimName: {{ .Values.pvcs.tensorrtCache.claimName }}
       - name: huggingface-cache
         persistentVolumeClaim:
-          claimName: huggingface-cache-pvc
+          claimName: {{ .Values.pvcs.huggingface.claimName }}
