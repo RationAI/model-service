@@ -14,10 +14,20 @@ pvcs:
   huggingface:
     storage: 15Gi
     claimName: huggingface-cache-pvc
+    mountPath: /mnt/huggingface_cache
   tensorrtCache:
     storage: 20Gi
     claimName: tensorrt-cache-pvc
-  data: data-ro
-  publicData: rationai-data-ro-pvc-jobs
-  projects: projects-rw
-  biopticTree: bioptictree-ro
+    mountPath: /mnt/cache
+  data:
+    claimName: data-ro
+    mountPath: /mnt/data
+  publicData:
+    claimName: rationai-data-ro-pvc-jobs
+    mountPath: /mnt/data/Public
+  projects:
+    claimName: projects-rw
+    mountPath: /mnt/projects
+  biopticTree:
+    claimName: bioptictree-ro
+    mountPath: /mnt/bioptic_tree

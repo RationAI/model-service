@@ -34,30 +34,30 @@ template:
               command: ["/bin/sh", "-c", "ray stop"]
         volumeMounts:
           - name: data
-            mountPath: /mnt/data
+            mountPath: {{ .Values.pvcs.data.mountPath }}
           - name: public-data
-            mountPath: /mnt/data/Public
+            mountPath: {{ .Values.pvcs.publicData.mountPath }}
           - name: projects
-            mountPath: /mnt/projects
+            mountPath: {{ .Values.pvcs.projects.mountPath }}
           - name: bioptic-tree
-            mountPath: /mnt/bioptic_tree
+            mountPath: {{ .Values.pvcs.biopticTree.mountPath }}
           - name: trt-cache-volume
-            mountPath: /mnt/cache
+            mountPath: {{ .Values.pvcs.tensorrtCache.mountPath }}
           - name: huggingface-cache
-            mountPath: /mnt/huggingface_cache
+            mountPath: {{ .Values.pvcs.huggingface.mountPath }}
     volumes:
       - name: data
         persistentVolumeClaim:
-          claimName: {{ .Values.pvcs.data }}
+          claimName: {{ .Values.pvcs.data.claimName }}
       - name: public-data
         persistentVolumeClaim:
-          claimName: {{ .Values.pvcs.publicData }}
+          claimName: {{ .Values.pvcs.publicData.claimName }}
       - name: projects
         persistentVolumeClaim:
-          claimName: {{ .Values.pvcs.projects }}
+          claimName: {{ .Values.pvcs.projects.claimName }}
       - name: bioptic-tree
         persistentVolumeClaim:
-          claimName: {{ .Values.pvcs.biopticTree }}
+          claimName: {{ .Values.pvcs.biopticTree.claimName }}
       - name: trt-cache-volume
         persistentVolumeClaim:
           claimName: {{ .Values.pvcs.tensorrtCache.claimName }}
