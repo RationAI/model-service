@@ -3,6 +3,15 @@
   route_prefix: /breast-cancer-virchow2
   runtime_env:
     working_dir: https://github.com/RationAI/model-service/archive/refs/heads/feature/breast-cancer-virchow.zip
+    env_vars:
+      MLFLOW_TRACKING_URI: http://mlflow-s3.rationai-mlflow
+      HF_HOME: /mnt/huggingface_cache
+    pip:
+      - onnxruntime-gpu
+      - mlflow<3.0
+      - lz4
+      - timm
+      - pillow
   deployments:
     - name: BreastCancerVirchow2
       max_ongoing_requests: 512
@@ -15,16 +24,6 @@
         num_cpus: 4
         num_gpus: 1
         memory: 12884901888
-        runtime_env:
-          env_vars:
-            MLFLOW_TRACKING_URI: http://mlflow-s3.rationai-mlflow
-            HF_HOME: /mnt/huggingface_cache
-          pip:
-            - onnxruntime-gpu
-            - mlflow<3.0
-            - lz4
-            - timm
-            - pillow
       user_config:
         tile_size: 224
         output_tile_size: 1
