@@ -37,7 +37,7 @@ class BreastCancerVirchow2:
         import timm
         from timm.data.config import resolve_data_config
         from timm.data.transforms_factory import create_transform
-        from timm.layers import SwiGLUPacked
+        from timm.layers.mlp import SwiGLUPacked
 
         self.tile_size = config["tile_size"]
         self.output_tile_size = config["output_tile_size"]
@@ -70,8 +70,8 @@ class BreastCancerVirchow2:
         self.input_name = self.session.get_inputs()[0].name
         self.output_name = self.session.get_outputs()[0].name
 
-        self.predict.set_max_batch_size(config["max_batch_size"])
-        self.predict.set_batch_wait_timeout_s(config["batch_wait_timeout_s"])
+        self.predict.set_max_batch_size(config["max_batch_size"])  # type: ignore[attr-defined]
+        self.predict.set_batch_wait_timeout_s(config["batch_wait_timeout_s"])  # type: ignore[attr-defined]
 
     async def get_config(self) -> dict[str, Any]:
         return {
@@ -84,12 +84,9 @@ class BreastCancerVirchow2:
     def _prepare_tile_for_virchow2(self, tile_chw: NDArray[np.uint8]) -> torch.Tensor:
         tile_hwc = tile_chw.transpose(1, 2, 0)
         image = Image.fromarray(tile_hwc)
-        tensor = self.foundation_transform(image)
 
-        if tensor.ndim == 3:
-            tensor = tensor.unsqueeze(0)
-
-        return tensor
+        # Important: return [3, 224, 224], not [1, 3, 224, 224].
+        return self.foundation_transform(image)
 
     async def _create_embedding(self, tile_chw: NDArray[np.uint8]) -> np.ndarray:
         tile_tensor = self._prepare_tile_for_virchow2(tile_chw)
@@ -99,6 +96,8 @@ class BreastCancerVirchow2:
         if isinstance(virchow2_output, np.ndarray):
             virchow2_output = torch.from_numpy(virchow2_output)
 
+        # Public Virchow2 predict returns one tensor per tile, shape [tokens, dim].
+        # Make it [1, tokens, dim] so the pooling code is batch-compatible.
         if virchow2_output.ndim == 2:
             virchow2_output = virchow2_output.unsqueeze(0)
 
@@ -113,7 +112,10 @@ class BreastCancerVirchow2:
         return embedding.squeeze(0).cpu().numpy().astype(np.float32, copy=False)
 
     @serve.batch
-    async def predict(self, tiles: list[NDArray[np.uint8]]) -> list[float]:
+    async def predict(
+        self,
+        tiles: list[NDArray[np.uint8]],
+    ) -> list[NDArray[np.float32]]:
         embeddings = await asyncio.gather(
             *(self._create_embedding(tile) for tile in tiles)
         )
@@ -125,10 +127,16 @@ class BreastCancerVirchow2:
             {self.input_name: batch},
         )[0]
 
-        return probabilities.reshape(-1).astype(float).tolist()
+        # Important for heatmap-builder:
+        # each tile prediction must be 2D or 3D.
+        # For one scalar probability per tile, return a 1x1 map.
+        return [
+            np.asarray([[float(prob)]], dtype=np.float32)
+            for prob in probabilities.reshape(-1)
+        ]
 
     @fastapi.post("/")
-    async def root(self, request: Request) -> float:
+    async def root(self, request: Request) -> list[list[float]]:
         data = await asyncio.to_thread(self.lz4.decompress, await request.body())
 
         tile = np.frombuffer(data, dtype=np.uint8).reshape(
@@ -139,7 +147,9 @@ class BreastCancerVirchow2:
 
         tile_chw = tile.transpose(2, 0, 1)
 
-        return await self.predict(tile_chw)
+        result = await self.predict(tile_chw)
+
+        return result.tolist()
 
 
 app = BreastCancerVirchow2.bind()
