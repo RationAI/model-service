@@ -62,9 +62,16 @@ class BreastCancerVirchow2:
         module_path, attr_name = model_config.pop("_target_").split(":")
         provider = getattr(importlib.import_module(module_path), attr_name)
 
+        from pathlib import Path
+
+        model_path = Path(provider(**model_config))
+
+        if model_path.is_dir():
+            model_path = model_path / "model.onnx"
+
         self.session = ort.InferenceSession(
-            provider(**model_config),
-            providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
+            str(model_path),
+            providers=["CPUExecutionProvider"],
         )
 
         self.input_name = self.session.get_inputs()[0].name
