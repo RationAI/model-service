@@ -3,7 +3,6 @@ import importlib
 from typing import Any, TypedDict
 
 import numpy as np
-import onnxruntime as ort
 import torch
 from fastapi import FastAPI, Request
 from numpy.typing import NDArray
@@ -35,6 +34,7 @@ class BreastCancerVirchow2:
 
     def reconfigure(self, config: Config) -> None:
         import timm
+        import onnxruntime as ort
         from timm.data.config import resolve_data_config
         from timm.data.transforms_factory import create_transform
         from timm.layers.mlp import SwiGLUPacked

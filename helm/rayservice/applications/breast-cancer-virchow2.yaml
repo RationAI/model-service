@@ -7,7 +7,7 @@
       MLFLOW_TRACKING_URI: http://mlflow-s3.rationai-mlflow
       HF_HOME: /mnt/huggingface_cache
     pip:
-      - onnxruntime-gpu
+      - onnxruntime
       - mlflow<3.0
       - lz4
       - timm
