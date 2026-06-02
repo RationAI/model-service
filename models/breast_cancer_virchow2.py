@@ -189,4 +189,4 @@ class BreastCancerVirchow2:
         return result.tolist()
 
 
-app = BreastCancerVirchow2.bind()
+app = BreastCancerVirchow2.bind()  # type: ignore[attr-defined]
