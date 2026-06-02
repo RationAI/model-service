@@ -1,5 +1,6 @@
 import asyncio
 import importlib
+from pathlib import Path
 from typing import Any, TypedDict
 
 import numpy as np
@@ -33,8 +34,8 @@ class BreastCancerVirchow2:
         self.lz4 = lz4.frame
 
     def reconfigure(self, config: Config) -> None:
-        import timm
         import onnxruntime as ort
+        import timm
         from timm.data.config import resolve_data_config
         from timm.data.transforms_factory import create_transform
         from timm.layers.mlp import SwiGLUPacked
@@ -46,6 +47,8 @@ class BreastCancerVirchow2:
 
         self.foundation_model = serve.get_app_handle(config["foundation_model_id"])
 
+        # Only used to construct the correct Virchow2 transform.
+        # The real embeddings are produced by the deployed Virchow2 service.
         virchow2 = timm.create_model(
             "hf-hub:paige-ai/Virchow2",
             pretrained=False,
@@ -62,12 +65,39 @@ class BreastCancerVirchow2:
         module_path, attr_name = model_config.pop("_target_").split(":")
         provider = getattr(importlib.import_module(module_path), attr_name)
 
-        from pathlib import Path
+        downloaded_path = Path(provider(**model_config))
 
-        model_path = Path(provider(**model_config))
+        if downloaded_path.is_dir():
+            candidates = list(downloaded_path.rglob("model.onnx"))
 
-        if model_path.is_dir():
-            model_path = model_path / "model.onnx"
+            if not candidates:
+                raise FileNotFoundError(
+                    "Downloaded MLflow artifact path is a directory, "
+                    f"but no model.onnx was found under: {downloaded_path}"
+                )
+
+            model_path = candidates[0]
+
+        elif downloaded_path.name == "model.onnx":
+            model_path = downloaded_path
+
+        else:
+            candidates = list(downloaded_path.parent.rglob("model.onnx"))
+
+            if not candidates:
+                raise FileNotFoundError(
+                    "Downloaded MLflow artifact path is not model.onnx and no "
+                    f"model.onnx was found nearby. Downloaded path: {downloaded_path}"
+                )
+
+            model_path = candidates[0]
+
+        if not model_path.exists():
+            raise FileNotFoundError(f"ONNX model file not found: {model_path}")
+
+        print(f"Using ONNX model path: {model_path}")
+        print(f"ONNX model exists: {model_path.exists()}")
+        print(f"ONNX model is file: {model_path.is_file()}")
 
         self.session = ort.InferenceSession(
             str(model_path),
@@ -103,7 +133,7 @@ class BreastCancerVirchow2:
         if isinstance(virchow2_output, np.ndarray):
             virchow2_output = torch.from_numpy(virchow2_output)
 
-        # Public Virchow2 predict returns one tensor per tile, shape [tokens, dim].
+        # Virchow2 predict returns one tensor per tile, shape [tokens, dim].
         # Make it [1, tokens, dim] so the pooling code is batch-compatible.
         if virchow2_output.ndim == 2:
             virchow2_output = virchow2_output.unsqueeze(0)
