@@ -2,7 +2,7 @@
   import_path: builders.heatmap_builder:app
   route_prefix: /heatmap-builder
   runtime_env:
-    working_dir: https://github.com/RationAI/model-service/archive/refs/heads/main.zip
+    working_dir: https://github.com/RationAI/model-service/archive/3ea57f1efca9be7eee8e1e7a61fd88a21dc324b1.zip
   deployments:
     - name: HeatmapBuilder
       max_ongoing_requests: 16
