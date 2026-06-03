@@ -125,8 +125,8 @@ class BreastCancerVirchow2:
         # Important: return [3, 224, 224], not [1, 3, 224, 224].
         return self.foundation_transform(image)
 
-    async def _create_embedding(self, tile_chw: NDArray[np.uint8]) -> np.ndarray:
-        tile_tensor = self._prepare_tile_for_virchow2(tile_chw)
+    async def _create_embedding(self, tile: NDArray[np.uint8]) -> np.ndarray:
+        tile_tensor = await asyncio.to_thread(self._prepare_tile_for_virchow2, tile)
 
         virchow2_output = await self.foundation_model.predict.remote(tile_tensor)
 
