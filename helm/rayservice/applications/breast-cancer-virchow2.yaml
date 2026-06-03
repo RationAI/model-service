@@ -22,7 +22,7 @@
         target_ongoing_requests: 128
       ray_actor_options:
         num_cpus: 4
-        num_gpus: 0
+        num_gpus: 1
         memory: 12884901888
       user_config:
         tile_size: 224
