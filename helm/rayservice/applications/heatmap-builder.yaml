@@ -15,5 +15,5 @@
         num_cpus: 8
         memory: 12884901888
       user_config:
-        num_threads: 16
-        max_concurrent_tasks: 64
+        num_threads: 8
+        max_concurrent_tasks: 16
