@@ -101,7 +101,7 @@ class BreastCancerVirchow2:
 
         self.session = ort.InferenceSession(
             str(model_path),
-            providers=["CPUExecutionProvider"],
+            providers=["GPUExecutionProvider"],
         )
 
         self.input_name = self.session.get_inputs()[0].name
