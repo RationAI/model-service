@@ -2,14 +2,11 @@
   import_path: models.breast_cancer_virchow2:app
   route_prefix: /breast-cancer-virchow2
   runtime_env:
-    working_dir: https://github.com/RationAI/model-service/archive/3ea57f1efca9be7eee8e1e7a61fd88a21dc324b1.zip
+    working_dir: https://github.com/RationAI/model-service/archive/refs/heads/main.zip
     env_vars:
       MLFLOW_TRACKING_URI: http://mlflow-s3.rationai-mlflow
       HF_HOME: /mnt/huggingface_cache
     pip:
-      - onnxruntime
-      - mlflow<3.0
-      - lz4
       - timm
       - pillow
   deployments:

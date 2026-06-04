@@ -4,7 +4,7 @@
   runtime_env:
     config:
       setup_timeout_seconds: 1800
-    working_dir: https://github.com/RationAI/model-service/archive/3ea57f1efca9be7eee8e1e7a61fd88a21dc324b1.zip
+    working_dir: https://github.com/RationAI/model-service/archive/refs/heads/main.zip
   deployments:
     - name: Virchow2
       max_ongoing_requests: 1024
