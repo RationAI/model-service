@@ -138,10 +138,12 @@ class BreastCancerGradingVirchow2:
         batch = np.stack(embeddings, axis=0).astype(np.float32, copy=False)
 
         # Evaluates the batched tensors through your 4-class linear network layer
-        probabilities = self.session.run(
+        probabilities = await asyncio.to_thread(
+            self.session.run,
             [self.output_name],
             {self.input_name: batch},
-        )[0]
+        )
+        probabilities = probabilities[0]
 
         # Modified to match 4-class heatmap dimensions:
         # Reshapes predictions to [1, 1, 4] so the universal system-level
