@@ -113,22 +113,22 @@ class BreastCancerGradingVirchow2:
         # Execute remote pipeline call to the shared Virchow2 microservice
         virchow2_output = await self.foundation_model.predict.remote(tile_tensor)
 
-        if isinstance(virchow2_output, np.ndarray):
-            virchow2_output = torch.from_numpy(virchow2_output)
+        if isinstance(virchow2_output, torch.Tensor):
+            virchow2_output = virchow2_output.cpu().numpy()
 
         if virchow2_output.ndim == 2:
-            virchow2_output = virchow2_output.unsqueeze(0)
+            virchow2_output = np.expand_dims(virchow2_output, axis=0)
 
         # Pool patch tokens matching the baseline foundation extraction layout
         class_token = virchow2_output[:, 0]
         patch_tokens = virchow2_output[:, 5:]
 
-        embedding = torch.cat(
-            [class_token, patch_tokens.mean(dim=1)],
-            dim=-1,
+        embedding = np.concatenate(
+            [class_token, patch_tokens.mean(axis=1)],
+            axis=-1,
         )
 
-        return embedding.squeeze(0).cpu().numpy().astype(np.float32, copy=False)
+        return np.squeeze(embedding, axis=0).astype(np.float32, copy=False)
 
     @serve.batch
     async def _predict_head(
