@@ -81,7 +81,7 @@ class BreastCancerGradingVirchow2:
         # Spin up your linear head ONNX session
         self.session = ort.InferenceSession(
             str(model_path),
-            providers=["CUDAExecutionProvider"],
+            providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
         )
 
         self.input_name = self.session.get_inputs()[0].name
