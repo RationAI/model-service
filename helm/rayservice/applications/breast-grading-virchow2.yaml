@@ -2,7 +2,7 @@
   import_path: models.breast_grading_virchow2:app
   route_prefix: /breast-grading-virchow2
   runtime_env:
-    working_dir: https://github.com/RationAI/model-service/archive/refs/heads/main.zip
+    working_dir: https://github.com/RationAI/model-service/archive/refs/heads/feature/breast-cancer-grading.zip #after debug set to this: https://github.com/RationAI/model-service/archive/refs/heads/main.zip
     env_vars:
       MLFLOW_TRACKING_URI: http://mlflow-s3.rationai-mlflow
       HF_HOME: /mnt/huggingface_cache
@@ -24,11 +24,11 @@
       user_config:
         tile_size: 224
         output_tile_size: 1
-        n_channels: 4
+        n_channels: 1
         mpp: 0.46
         max_batch_size: 128
         batch_wait_timeout_s: 0.05
         foundation_model_id: virchow2
         model:
           _target_: providers.model_provider:mlflow
-          artifact_uri: mlflow-artifacts:/2/# TODO /artifacts/model 
+          artifact_uri: mlflow-artifacts:/2/ad34158eedb945c2895cca84ddee7d2a/artifacts/model 

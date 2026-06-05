@@ -30,6 +30,7 @@ fastapi = FastAPI()
 class BreastCancerGradingVirchow2:
     def __init__(self) -> None:
         import lz4.frame
+
         self.lz4 = lz4.frame
 
     def reconfigure(self, config: Config) -> None:
@@ -143,12 +144,9 @@ class BreastCancerGradingVirchow2:
         )[0]
 
         # Modified to match 4-class heatmap dimensions:
-        # Reshapes predictions to [1, 1, 4] so the universal system-level 
+        # Reshapes predictions to [1, 1, 4] so the universal system-level
         # HeatmapBuilder maps tissue grades over 4 channels instead of a binary scalar.
-        return [
-            prob.reshape(1, 1, 4).astype(np.float32)
-            for prob in probabilities
-        ]
+        return [prob.reshape(1, 1, 4).astype(np.float32) for prob in probabilities]
 
     async def predict(
         self,
