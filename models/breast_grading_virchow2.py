@@ -156,7 +156,7 @@ class BreastCancerGradingVirchow2:
         return await self._predict_head(embedding)
 
     @fastapi.post("/")
-    async def root(self, request: Request) -> list[list[list[list[float]]]]:
+    async def root(self, request: Request) -> list[list[list[float]]]:
         # 1. Unzip raw compressed image tile bytes coming from network traffic
         data = await asyncio.to_thread(self.lz4.decompress, await request.body())
 
