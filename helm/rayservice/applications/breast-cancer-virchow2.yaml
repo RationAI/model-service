@@ -1,0 +1,34 @@
+- name: breast-cancer-virchow2
+  import_path: models.breast_cancer_virchow2:app
+  route_prefix: /breast-cancer-virchow2
+  runtime_env:
+    working_dir: https://github.com/RationAI/model-service/archive/refs/heads/main.zip
+    env_vars:
+      MLFLOW_TRACKING_URI: http://mlflow-s3.rationai-mlflow
+      HF_HOME: /mnt/huggingface_cache
+    pip:
+      - timm
+      - pillow
+  deployments:
+    - name: BreastCancerVirchow2
+      max_ongoing_requests: 512
+      max_queued_requests: 4096
+      autoscaling_config:
+        min_replicas: 0
+        max_replicas: 2
+        target_ongoing_requests: 64
+      ray_actor_options:
+        num_cpus: 2
+        num_gpus: 1
+        memory: 12884901888
+      user_config:
+        tile_size: 224
+        output_tile_size: 1
+        n_channels: 1
+        mpp: 0.46
+        max_batch_size: 128
+        batch_wait_timeout_s: 0.05
+        foundation_model_id: virchow2
+        model:
+          _target_: providers.model_provider:mlflow
+          artifact_uri: mlflow-artifacts:/2/bc79482fb539496ea9a2a43479150956/artifacts/model

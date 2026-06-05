@@ -8,3 +8,4 @@ applications:
   - prostate-classifier-1
   - prov-gigapath
   - virchow2
+  - breast-cancer-virchow2
