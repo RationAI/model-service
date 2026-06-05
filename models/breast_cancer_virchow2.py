@@ -67,37 +67,18 @@ class BreastCancerVirchow2:
 
         downloaded_path = Path(provider(**model_config))
 
-        if downloaded_path.is_dir():
-            candidates = list(downloaded_path.rglob("model.onnx"))
+        candidates = list(downloaded_path.rglob("model.onnx"))
 
-            if not candidates:
-                raise FileNotFoundError(
-                    "Downloaded MLflow artifact path is a directory, "
-                    f"but no model.onnx was found under: {downloaded_path}"
-                )
+        if not candidates:
+            raise FileNotFoundError(
+                "Downloaded MLflow artifact path is a directory, "
+                f"but no model.onnx was found under: {downloaded_path}"
+            )
 
-            model_path = candidates[0]
-
-        elif downloaded_path.name == "model.onnx":
-            model_path = downloaded_path
-
-        else:
-            candidates = list(downloaded_path.parent.rglob("model.onnx"))
-
-            if not candidates:
-                raise FileNotFoundError(
-                    "Downloaded MLflow artifact path is not model.onnx and no "
-                    f"model.onnx was found nearby. Downloaded path: {downloaded_path}"
-                )
-
-            model_path = candidates[0]
+        model_path = candidates[0]
 
         if not model_path.exists():
             raise FileNotFoundError(f"ONNX model file not found: {model_path}")
-
-        print(f"Using ONNX model path: {model_path}")
-        print(f"ONNX model exists: {model_path.exists()}")
-        print(f"ONNX model is file: {model_path.is_file()}")
 
         self.session = ort.InferenceSession(
             str(model_path),
@@ -107,8 +88,10 @@ class BreastCancerVirchow2:
         self.input_name = self.session.get_inputs()[0].name
         self.output_name = self.session.get_outputs()[0].name
 
-        self.predict.set_max_batch_size(config["max_batch_size"])  # type: ignore[attr-defined]
-        self.predict.set_batch_wait_timeout_s(config["batch_wait_timeout_s"])  # type: ignore[attr-defined]
+        # Batching should happen only for the ONNX head, after Virchow2 embeddings
+        # have already been produced for individual tiles.
+        self._predict_head.set_max_batch_size(config["max_batch_size"])  # type: ignore[attr-defined]
+        self._predict_head.set_batch_wait_timeout_s(config["batch_wait_timeout_s"])  # type: ignore[attr-defined]
 
     async def get_config(self) -> dict[str, Any]:
         return {
@@ -128,6 +111,8 @@ class BreastCancerVirchow2:
     async def _create_embedding(self, tile: NDArray[np.uint8]) -> np.ndarray:
         tile_tensor = await asyncio.to_thread(self._prepare_tile_for_virchow2, tile)
 
+        # Intentionally send a single tile to the foundation model.
+        # Batching is handled inside the Virchow2 service, not here.
         virchow2_output = await self.foundation_model.predict.remote(tile_tensor)
 
         if isinstance(virchow2_output, np.ndarray):
@@ -149,14 +134,10 @@ class BreastCancerVirchow2:
         return embedding.squeeze(0).cpu().numpy().astype(np.float32, copy=False)
 
     @serve.batch
-    async def predict(
+    async def _predict_head(
         self,
-        tiles: list[NDArray[np.uint8]],
+        embeddings: list[NDArray[np.float32]],
     ) -> list[NDArray[np.float32]]:
-        embeddings = await asyncio.gather(
-            *(self._create_embedding(tile) for tile in tiles)
-        )
-
         batch = np.stack(embeddings, axis=0).astype(np.float32, copy=False)
 
         probabilities = self.session.run(
@@ -171,6 +152,13 @@ class BreastCancerVirchow2:
             np.asarray([[float(prob)]], dtype=np.float32)
             for prob in probabilities.reshape(-1)
         ]
+
+    async def predict(
+        self,
+        tile: NDArray[np.uint8],
+    ) -> NDArray[np.float32]:
+        embedding = await self._create_embedding(tile)
+        return await self._predict_head(embedding)
 
     @fastapi.post("/")
     async def root(self, request: Request) -> list[list[float]]:
