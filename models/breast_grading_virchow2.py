@@ -81,15 +81,14 @@ class BreastCancerGradingVirchow2:
         # Spin up your linear head ONNX session
         self.session = ort.InferenceSession(
             str(model_path),
-            providers=["CPUExecutionProvider"],
+            providers=["CUDAExecutionProvider"],
         )
 
         self.input_name = self.session.get_inputs()[0].name
         self.output_name = self.session.get_outputs()[0].name
 
-        # Enforce micro-batching configurations on the collective predict entry-point instead of _predict_head
-        self.predict.set_max_batch_size(config["max_batch_size"])  # type: ignore[attr-defined]
-        self.predict.set_batch_wait_timeout_s(config["batch_wait_timeout_s"])  # type: ignore[attr-defined]
+        self._predict_head.set_max_batch_size(config["max_batch_size"])
+        self._predict_head.set_batch_wait_timeout_s(config["batch_wait_timeout_s"])
 
     async def get_config(self) -> dict[str, Any]:
         return {
@@ -129,24 +128,28 @@ class BreastCancerGradingVirchow2:
         return embedding.squeeze(0).cpu().numpy().astype(np.float32, copy=False)
 
     @serve.batch
-    async def predict(
+    async def _predict_head(
         self,
-        tiles: list[NDArray[np.uint8]],
+        embeddings: list[NDArray[np.float32]],
     ) -> list[NDArray[np.float32]]:
 
-        embeddings = await asyncio.gather(
-            *(self._create_embedding(tile) for tile in tiles)
-        )
         batch = np.stack(embeddings, axis=0).astype(np.float32, copy=False)
 
-        # Evaluate raw un-softmaxed logit outputs via ONNX Runtime session
+        # Evaluate the [B, 4] output matrix out of your exported ONNX linear model
         logits = self.session.run(
             [self.output_name],
             {self.input_name: batch},
         )[0]
 
-        # Reshape output elements into the channel structure expected by HeatmapBuilder
         return [row.reshape(self.n_channels, 1, 1).astype(np.float32) for row in logits]
+
+    # Entry point takes exactly ONE tile at a time from root
+    async def predict(
+        self,
+        tile: NDArray[np.uint8],
+    ) -> NDArray[np.float32]:
+        embedding = await self._create_embedding(tile)
+        return await self._predict_head(embedding)
 
     @fastapi.post("/")
     async def root(self, request: Request) -> list[list[list[float]]]:
@@ -165,7 +168,7 @@ class BreastCancerGradingVirchow2:
         # 3. Fire pipeline (Raw tile -> Virchow2 embedding -> Your 4-class Head)
         result = await self.predict(tile_chw)
 
-        return result[0].tolist()
+        return result.tolist()
 
 
 app = BreastCancerGradingVirchow2.bind()  # type: ignore[attr-defined]
