@@ -87,8 +87,8 @@ class BreastCancerGradingVirchow2:
         self.input_name = self.session.get_inputs()[0].name
         self.output_name = self.session.get_outputs()[0].name
 
-        self._predict_head.set_max_batch_size(config["max_batch_size"])
-        self._predict_head.set_batch_wait_timeout_s(config["batch_wait_timeout_s"])
+        self._predict_head.set_max_batch_size(config["max_batch_size"])  # type: ignore[attr-defined]
+        self._predict_head.set_batch_wait_timeout_s(config["batch_wait_timeout_s"])  # type: ignore[attr-defined]
 
     async def get_config(self) -> dict[str, Any]:
         return {
@@ -171,4 +171,4 @@ class BreastCancerGradingVirchow2:
         return result.tolist()
 
 
-app = BreastCancerGradingVirchow2.bind()  # type: ignore[attr-defined]
+app = BreastCancerGradingVirchow2.bind()  # type: ignore[attr-defined
