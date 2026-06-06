@@ -163,7 +163,7 @@ class BreastCancerGradingVirchow2:
         tile_chw = tile.transpose(2, 0, 1)
 
         # 3. Fire pipeline (Raw tile -> Virchow2 embedding -> Your 4-class Head)
-        result = await self.predict([tile_chw])
+        result = await self.predict(tile_chw)
 
         return result[0].tolist()
 
