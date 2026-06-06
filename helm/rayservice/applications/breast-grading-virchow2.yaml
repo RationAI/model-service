@@ -31,4 +31,4 @@
         foundation_model_id: virchow2
         model:
           _target_: providers.model_provider:mlflow
-          artifact_uri: mlflow-artifacts:/37/ad34158eedb945c2895cca84ddee7d2a/artifacts/model 
+          artifact_uri: mlflow-artifacts:/37/484fdb26a5394af4bc76e387e7c93c89/artifacts/grading_head

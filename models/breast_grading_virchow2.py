@@ -81,15 +81,15 @@ class BreastCancerGradingVirchow2:
         # Spin up your linear head ONNX session
         self.session = ort.InferenceSession(
             str(model_path),
-            providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
+            providers=["CPUExecutionProvider"],
         )
 
         self.input_name = self.session.get_inputs()[0].name
         self.output_name = self.session.get_outputs()[0].name
 
-        # Enforce micro-batching limits for your 4-class ONNX head evaluation pass
-        self._predict_head.set_max_batch_size(config["max_batch_size"])  # type: ignore[attr-defined]
-        self._predict_head.set_batch_wait_timeout_s(config["batch_wait_timeout_s"])  # type: ignore[attr-defined]
+        # Enforce micro-batching configurations on the collective predict entry-point instead of _predict_head
+        self.predict.set_max_batch_size(config["max_batch_size"])  # type: ignore[attr-defined]
+        self.predict.set_batch_wait_timeout_s(config["batch_wait_timeout_s"])  # type: ignore[attr-defined]
 
     async def get_config(self) -> dict[str, Any]:
         return {
@@ -113,49 +113,40 @@ class BreastCancerGradingVirchow2:
         # Execute remote pipeline call to the shared Virchow2 microservice
         virchow2_output = await self.foundation_model.predict.remote(tile_tensor)
 
-        if isinstance(virchow2_output, torch.Tensor):
-            virchow2_output = virchow2_output.cpu().numpy()
+        if isinstance(virchow2_output, np.ndarray):
+            virchow2_output = torch.from_numpy(virchow2_output)
 
+        # Virchow2 predict returns one tensor per tile, shape [tokens, dim].
+        # Make it [1, tokens, dim] so pooling is batch-compatible.
         if virchow2_output.ndim == 2:
-            virchow2_output = np.expand_dims(virchow2_output, axis=0)
+            virchow2_output = virchow2_output.unsqueeze(0)
 
-        # Pool patch tokens matching the baseline foundation extraction layout
         class_token = virchow2_output[:, 0]
         patch_tokens = virchow2_output[:, 5:]
+        embedding = torch.cat([class_token, patch_tokens.mean(dim=1)], dim=-1)
 
-        embedding = np.concatenate(
-            [class_token, patch_tokens.mean(axis=1)],
-            axis=-1,
-        )
-
-        return np.squeeze(embedding, axis=0).astype(np.float32, copy=False)
+        # 🟢 Safe squeeze that leaves multi-tile production batch axes untouched!
+        return embedding.squeeze(0).cpu().numpy().astype(np.float32, copy=False)
 
     @serve.batch
-    async def _predict_head(
-        self,
-        embeddings: list[NDArray[np.float32]],
-    ) -> list[NDArray[np.float32]]:
-        batch = np.stack(embeddings, axis=0).astype(np.float32, copy=False)
-
-        # Evaluates the batched tensors through your 4-class linear network layer
-        probabilities = await asyncio.to_thread(
-            self.session.run,
-            [self.output_name],
-            {self.input_name: batch},
-        )
-        probabilities = probabilities[0]
-
-        # Modified to match 4-class heatmap dimensions:
-        # Reshapes predictions to [1, 1, 4] so the universal system-level
-        # HeatmapBuilder maps tissue grades over 4 channels instead of a binary scalar.
-        return [prob.reshape(1, 1, 4).astype(np.float32) for prob in probabilities]
-
     async def predict(
         self,
-        tile: NDArray[np.uint8],
-    ) -> NDArray[np.float32]:
-        embedding = await self._create_embedding(tile)
-        return await self._predict_head(embedding)
+        tiles: list[NDArray[np.uint8]],
+    ) -> list[NDArray[np.float32]]:
+
+        embeddings = await asyncio.gather(
+            *(self._create_embedding(tile) for tile in tiles)
+        )
+        batch = np.stack(embeddings, axis=0).astype(np.float32, copy=False)
+
+        # Evaluate raw un-softmaxed logit outputs via ONNX Runtime session
+        logits = self.session.run(
+            [self.output_name],
+            {self.input_name: batch},
+        )[0]
+
+        # Reshape output elements into the channel structure expected by HeatmapBuilder
+        return [row.reshape(self.n_channels, 1, 1).astype(np.float32) for row in logits]
 
     @fastapi.post("/")
     async def root(self, request: Request) -> list[list[list[float]]]:
@@ -172,9 +163,9 @@ class BreastCancerGradingVirchow2:
         tile_chw = tile.transpose(2, 0, 1)
 
         # 3. Fire pipeline (Raw tile -> Virchow2 embedding -> Your 4-class Head)
-        result = await self.predict(tile_chw)
+        result = await self.predict([tile_chw])
 
-        return result.tolist()
+        return result[0].tolist()
 
 
 app = BreastCancerGradingVirchow2.bind()  # type: ignore[attr-defined]
