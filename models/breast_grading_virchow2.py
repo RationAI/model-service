@@ -171,4 +171,4 @@ class BreastCancerGradingVirchow2:
         return result.tolist()
 
 
-app = BreastCancerGradingVirchow2.bind()  # type: ignore[attr-defined
+app = BreastCancerGradingVirchow2.bind()  # type: ignore[attr-defined]
