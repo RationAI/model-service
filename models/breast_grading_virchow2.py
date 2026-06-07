@@ -73,27 +73,18 @@ class BreastCancerGradingVirchow2:
         if not candidates:
             raise FileNotFoundError(
                 "Downloaded MLflow artifact path is a directory, "
-                "but no model.onnx was found under: "
-                f"{downloaded_path}"
+                f"but no model.onnx was found under: {downloaded_path}"
             )
 
         model_path = candidates[0]
 
-        # Spin up your linear head ONNX session using CPU Execution to prevent host<->device lag
         self.session = ort.InferenceSession(
             str(model_path),
-            providers=["CPUExecutionProvider", "CUDAExecutionProvider"],
+            providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
         )
 
         self.input_name = self.session.get_inputs()[0].name
         self.output_name = self.session.get_outputs()[0].name
-        self._num_classes = int(self.session.get_outputs()[0].shape[-1])
-
-        if self.n_channels not in (4, 8):
-            raise ValueError(
-                f"n_channels config is set to {self.n_channels}, but must be "
-                f"either 4 (Softmax only) or 8 (Softmax + Logits)."
-            )
 
         self._predict_head.set_max_batch_size(config["max_batch_size"])  # type: ignore[attr-defined]
         self._predict_head.set_batch_wait_timeout_s(config["batch_wait_timeout_s"])  # type: ignore[attr-defined]
@@ -132,7 +123,6 @@ class BreastCancerGradingVirchow2:
         patch_tokens = virchow2_output[:, 5:]
         embedding = torch.cat([class_token, patch_tokens.mean(dim=1)], dim=-1)
 
-        # Safe squeeze that leaves multi-tile production batch axes untouched
         return embedding.squeeze(0).cpu().numpy().astype(np.float32, copy=False)
 
     @serve.batch
@@ -140,30 +130,16 @@ class BreastCancerGradingVirchow2:
         self,
         embeddings: list[NDArray[np.float32]],
     ) -> list[NDArray[np.float32]]:
+
         batch = np.stack(embeddings, axis=0).astype(np.float32, copy=False)
 
-        # 1. Evaluate the [B, 4] raw logit matrix from your exported ONNX linear model
-        logits_np = self.session.run(
+        # Evaluate the [B, 4] output matrix out of your exported ONNX linear model
+        logits = self.session.run(
             [self.output_name],
             {self.input_name: batch},
         )[0]
 
-        # 2. Compute Softmax dynamically using PyTorch over the final dimension
-        logits_tensor = torch.from_numpy(logits_np)
-        softmax_tensor = torch.nn.functional.softmax(logits_tensor, dim=-1)
-        softmax_np = softmax_tensor.cpu().numpy().astype(np.float32, copy=False)
-
-        # 3. Concatenate along channel axis: shape transitions from (B, 4) + (B, 4) to (B, 8)
-        # Put Softmax FIRST so HeatmapBuilder reads it when config is sliced to 4
-        combined_outputs = np.concatenate([softmax_np, logits_np], axis=-1)
-
-        # 4. DYNAMIC SLICE: Slice the array to match exactly what the platform requested
-        # If config is 4, rows become shape (4, 1, 1) -> Safe for HeatmapBuilder
-        # If config is 8, rows become shape (8, 1, 1) -> Full data, both softmax and logits
-        return [
-            row[: self.n_channels].reshape(self.n_channels, 1, 1).astype(np.float32)
-            for row in combined_outputs
-        ]
+        return [row.reshape(self.n_channels, 1, 1).astype(np.float32) for row in logits]
 
     # Entry point takes exactly ONE tile at a time from root
     async def predict(
@@ -171,15 +147,18 @@ class BreastCancerGradingVirchow2:
         tile: NDArray[np.uint8],
     ) -> NDArray[np.float32]:
         embedding = await self._create_embedding(tile)
-        return await self._predict_head(embedding)
+        return await self._predict_head(embedding)  # returns 4 raw logits per tile
 
     @fastapi.post("/")
     async def root(self, request: Request) -> list[list[list[float]]]:
+        # Capture raw incoming network request body bytes
         body_bytes = await request.body()
 
         try:
+            # 1. Unzip raw compressed image tile bytes asynchronously in a thread worker
             data = await asyncio.to_thread(self.lz4.decompress, body_bytes)
 
+            # 2. Size check
             expected_bytes = self.tile_size * self.tile_size * 3
             if len(data) != expected_bytes:
                 raise ValueError(
@@ -187,20 +166,20 @@ class BreastCancerGradingVirchow2:
                     f"Expected exactly {expected_bytes} bytes, but got {len(data)}."
                 )
 
-            # Reconstruct the raw pixel array
+            # 3. Reconstruct the raw pixel array
             tile = np.frombuffer(data, dtype=np.uint8).reshape(
                 self.tile_size,
                 self.tile_size,
                 3,
             )
         except (RuntimeError, ValueError) as err:
+            # 4. Gracefully map decompression or reshape shape errors to a clean HTTP 400
             raise HTTPException(
                 status_code=400,
                 detail=f"Malformed or invalid compressed tile image payload: {err!s}",
             ) from err
 
         tile_chw = tile.transpose(2, 0, 1)
-
         result = await self.predict(tile_chw)
 
         return result.tolist()
