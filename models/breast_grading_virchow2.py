@@ -171,7 +171,8 @@ class BreastCancerGradingVirchow2:
         tile: NDArray[np.uint8],
     ) -> NDArray[np.float32]:
         embedding = await self._create_embedding(tile)
-        return await self._predict_head(embedding)
+        results = await self._predict_head(embedding)
+        return results[0]
 
     @fastapi.post("/")
     async def root(self, request: Request) -> list[list[list[float]]]:
