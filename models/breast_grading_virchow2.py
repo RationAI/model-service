@@ -89,13 +89,10 @@ class BreastCancerGradingVirchow2:
         self.output_name = self.session.get_outputs()[0].name
         self._num_classes = int(self.session.get_outputs()[0].shape[-1])
 
-        # Fail-fast validation guard: Ensure config allows the 8-channel dual representation
-        # (4 raw logit channels + 4 normalized softmax channels)
-        if self.n_channels != self._num_classes:
+        if self.n_channels not in (4, 8):
             raise ValueError(
-                f"n_channels ({self.n_channels}) must equal the ONNX model's "
-                f"native class count ({self._num_classes}) so that HeatmapBuilder "
-                f"slices the correct number of layers."
+                f"n_channels config is set to {self.n_channels}, but must be "
+                f"either 4 (Softmax only) or 8 (Softmax + Logits)."
             )
 
         self._predict_head.set_max_batch_size(config["max_batch_size"])  # type: ignore[attr-defined]
@@ -160,9 +157,13 @@ class BreastCancerGradingVirchow2:
         # Put Softmax FIRST so HeatmapBuilder reads it when config is sliced to 4
         combined_outputs = np.concatenate([softmax_np, logits_np], axis=-1)
 
-        # Channels 0-3: Softmax Probabilities (Safe for pyvips)
-        # Channels 4-7: Raw Logits (For your aggregation scripts)
-        return [row.reshape(8, 1, 1).astype(np.float32) for row in combined_outputs]
+        # 4. DYNAMIC SLICE: Slice the array to match exactly what the platform requested
+        # If config is 4, rows become shape (4, 1, 1) -> Safe for HeatmapBuilder
+        # If config is 8, rows become shape (8, 1, 1) -> Full data, both softmax and logits
+        return [
+            row[: self.n_channels].reshape(self.n_channels, 1, 1).astype(np.float32)
+            for row in combined_outputs
+        ]
 
     # Entry point takes exactly ONE tile at a time from root
     async def predict(
