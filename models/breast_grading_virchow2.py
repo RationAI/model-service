@@ -157,10 +157,11 @@ class BreastCancerGradingVirchow2:
         softmax_np = softmax_tensor.cpu().numpy().astype(np.float32, copy=False)
 
         # 3. Concatenate along channel axis: shape transitions from (B, 4) + (B, 4) to (B, 8)
-        combined_outputs = np.concatenate([logits_np, softmax_np], axis=-1)
+        # Put Softmax FIRST so HeatmapBuilder reads it when config is sliced to 4
+        combined_outputs = np.concatenate([softmax_np, logits_np], axis=-1)
 
-        # 4. Pack row into a 3D block (8, 1, 1) to satisfy HeatmapBuilder layout
-        # Channels 0-3: Raw Logits | Channels 4-7: Softmax Probabilities
+        # Channels 0-3: Softmax Probabilities (Safe for pyvips)
+        # Channels 4-7: Raw Logits (For your aggregation scripts)
         return [row.reshape(8, 1, 1).astype(np.float32) for row in combined_outputs]
 
     # Entry point takes exactly ONE tile at a time from root

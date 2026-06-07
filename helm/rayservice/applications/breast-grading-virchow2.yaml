@@ -24,7 +24,7 @@
       user_config:
         tile_size: 224
         output_tile_size: 1
-        n_channels: 8
+        n_channels: 4
         mpp: 0.46
         max_batch_size: 128
         batch_wait_timeout_s: 0.05
