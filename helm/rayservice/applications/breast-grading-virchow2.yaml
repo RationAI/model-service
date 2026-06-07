@@ -2,7 +2,7 @@
   import_path: models.breast_grading_virchow2:app
   route_prefix: /breast-grading-virchow2
   runtime_env:
-    working_dir: https://github.com/RationAI/model-service/archive/refs/heads/feature/breast-cancer-grading.zip #after debug set to this: https://github.com/RationAI/model-service/archive/refs/heads/main.zip
+    working_dir: https://github.com/RationAI/model-service/archive/refs/heads/main.zip
     env_vars:
       MLFLOW_TRACKING_URI: http://mlflow-s3.rationai-mlflow
       HF_HOME: /mnt/huggingface_cache
