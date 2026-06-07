@@ -91,11 +91,11 @@ class BreastCancerGradingVirchow2:
 
         # Fail-fast validation guard: Ensure config allows the 8-channel dual representation
         # (4 raw logit channels + 4 normalized softmax channels)
-        if self.n_channels != 8:
+        if self.n_channels != self._num_classes:
             raise ValueError(
-                f"n_channels config is set to {self.n_channels}, but must be exactly 8 "
-                f"to support dual representation (4 raw logits + 4 softmax probabilities) "
-                f"for the underlying {self._num_classes}-class model."
+                f"n_channels ({self.n_channels}) must equal the ONNX model's "
+                f"native class count ({self._num_classes}) so that HeatmapBuilder "
+                f"slices the correct number of layers."
             )
 
         self._predict_head.set_max_batch_size(config["max_batch_size"])  # type: ignore[attr-defined]
