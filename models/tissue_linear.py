@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import importlib
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypedDict
 
 import numpy as np
@@ -59,12 +58,10 @@ class TissueLinear:
 
         self.foundation_model = serve.get_app_handle(config["foundation_model_id"])
 
-        # Build Virchow2's eval transform directly from its known pretrained_cfg
-        # (verified against the model's config.json: ImageNet mean/std, bicubic,
-        # crop_pct 1.0). This avoids instantiating the full ~600M-param model
-        # just to read its transform config, saving ~2.4 GB RAM per replica and
-        # removing any Hugging Face Hub access at init (the repo is gated). The
-        # embeddings themselves are produced by the deployed Virchow2 service.
+        # Virchow2's eval transform, built from its pretrained_cfg (ImageNet
+        # mean/std, bicubic, crop_pct 1.0) instead of loading the ~600M-param
+        # model just to read it: saves ~2.4 GB RAM/replica and avoids HF Hub
+        # access at init (gated repo). Embeddings come from the Virchow2 service.
         self.foundation_transform = create_transform(
             input_size=(3, self.tile_size, self.tile_size),
             is_training=False,
@@ -79,31 +76,11 @@ class TissueLinear:
         module_path, attr_name = model_config.pop("_target_").split(":")
         provider = getattr(importlib.import_module(module_path), attr_name)
 
-        # Resolve the .onnx file from the MLflow download. The provider may
-        # return the file directly, a directory containing it, or a sibling
-        # path. Resolved inline (no module-level helper) because Ray's
-        # by-value deployment serialization does not reliably carry module
-        # globals into the worker.
-        downloaded_path = Path(provider(**model_config))
-        if downloaded_path.is_file() and downloaded_path.suffix == ".onnx":
-            model_path = downloaded_path
-        else:
-            search_root = (
-                downloaded_path if downloaded_path.is_dir() else downloaded_path.parent
-            )
-            candidates = list(search_root.rglob("*.onnx"))
-            if not candidates:
-                raise FileNotFoundError(
-                    f"No .onnx file found at or near downloaded path: {downloaded_path}"
-                )
-            model_path = candidates[0]
-        print(f"Using ONNX model path: {model_path}")
+        model_path = provider(**model_config)
 
-        # Run the head on CPU. It is a single 2560->n_classes linear, so the
-        # GPU kernel-launch and host<->device transfer overhead would exceed
-        # the matmul itself, and the embeddings already arrive as CPU numpy.
-        # The num_gpus: 1 reservation is only to land the actor on a worker
-        # image that carries torch/timm, not for ONNX compute.
+        # Head runs on CPU: a single 2560->n_classes matmul, so GPU launch +
+        # transfer overhead would exceed it, and embeddings arrive as CPU numpy.
+        # num_gpus: 1 only pins the actor to a worker with torch/timm.
         self.session = ort.InferenceSession(
             str(model_path),
             providers=["CPUExecutionProvider"],
@@ -111,34 +88,6 @@ class TissueLinear:
         self.input_name = self.session.get_inputs()[0].name
         self.output_name = self.session.get_outputs()[0].name
         self._num_classes = int(self.session.get_outputs()[0].shape[-1])
-
-        # Fail fast on config that contradicts the model's output contract:
-        # one softmax probability per class per tile, shape (n_classes, 1, 1).
-        # A mismatch (e.g. a stale n_channels) would silently corrupt the
-        # HeatmapBuilder output instead of erroring.
-        if self.n_channels != self._num_classes:
-            raise ValueError(
-                f"n_channels ({self.n_channels}) must equal the ONNX head's "
-                f"number of classes ({self._num_classes})"
-            )
-        if self.output_tile_size != 1:
-            raise ValueError(
-                f"output_tile_size must be 1 for per-tile classification, "
-                f"got {self.output_tile_size}"
-            )
-        # Virchow2's pooled embedding is 2560-d (class token + patch-token mean,
-        # 1280 each). Guard against an artifact_uri pointing to a head trained
-        # for a different foundation model, which would otherwise fail with a
-        # cryptic shape error on the first session.run mid-slide.
-        expected_embedding_dim = 2560
-        onnx_input_dim = int(self.session.get_inputs()[0].shape[-1])
-        if onnx_input_dim != expected_embedding_dim:
-            raise ValueError(
-                f"ONNX head expects input width {onnx_input_dim}, but the "
-                f"Virchow2 embedding is {expected_embedding_dim}-d; the "
-                f"artifact_uri likely points to a head for a different "
-                f"foundation model"
-            )
 
         self.predict.set_max_batch_size(config["max_batch_size"])  # type: ignore[attr-defined]
         self.predict.set_batch_wait_timeout_s(config["batch_wait_timeout_s"])  # type: ignore[attr-defined]
@@ -190,9 +139,8 @@ class TissueLinear:
         )
         batch = np.stack(embeddings, axis=0).astype(np.float32, copy=False)
 
-        # The ONNX graph ends in a Softmax, so this already returns per-class
-        # probabilities of shape (batch, n_classes). Reshape each row to a
-        # (n_classes, 1, 1) map for HeatmapBuilder.
+        # ONNX graph ends in Softmax -> (batch, n_classes) probabilities.
+        # Reshape each row to (n_classes, 1, 1) for HeatmapBuilder.
         probs = self.session.run(
             [self.output_name],
             {self.input_name: batch},
