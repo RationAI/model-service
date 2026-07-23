@@ -1,6 +1,5 @@
 # We need to build libvips and openslide from source to get the required features.
-# The base image needs to extend rayproject/ray image which is based on ubuntu:22.04.
-# Our images are based on ubuntu:24.04, therefore, we can't reuse them.
+# The base image needs to extend the rayproject/ray image which is based on ubuntu:22.04.
 FROM ubuntu:22.04 AS builder
 
 ARG VIPS_VERSION=8.17.2
@@ -42,10 +41,10 @@ RUN sudo apt-get update && sudo apt-get -y upgrade && \
     # Vips & Openslide packages
     zlib1g-dev libzstd-dev libpng-dev libjpeg-turbo8-dev libtiff-dev \
     libopenjp2-7-dev libgdk-pixbuf2.0-dev libxml2-dev sqlite3 libsqlite3-dev \
-    libcairo2-dev libglib2.0-dev libdcmtk-dev libjxr-dev python3-dev 
+    libcairo2-dev libglib2.0-dev libdcmtk-dev libjxr-dev python3-dev
 
 # Cleanup
-RUN sudo apt-get remove -y --purge systemd systemd-sysv && sudo apt-get autoremove --purge -y && sudo apt-get clean && sudo rm -rf /var/lib/apt/lists/* 
+RUN sudo apt-get remove -y --purge systemd systemd-sysv && sudo apt-get autoremove --purge -y && sudo apt-get clean && sudo rm -rf /var/lib/apt/lists/*
 
 ENV LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/usr/local/lib:/home/ray/anaconda3/lib/python3.12/site-packages/tensorrt_libs:/home/ray/anaconda3/lib/python3.12/site-packages/nvidia/cudnn/lib"
 RUN sudo sh -c 'echo "/usr/local/lib" > /etc/ld.so.conf.d/custom-libs.conf' && \
@@ -53,7 +52,15 @@ RUN sudo sh -c 'echo "/usr/local/lib" > /etc/ld.so.conf.d/custom-libs.conf' && \
     sudo sh -c 'echo "/home/ray/anaconda3/lib/python3.12/site-packages/nvidia/cudnn/lib" > /etc/ld.so.conf.d/nvidia-libs.conf' && \
     sudo ldconfig
 
+# Pin CUDA 12 compatible versions to avoid libcudart.so.13 mismatches.
+# The rayproject/ray:2.53.0-py312-gpu image bundles CUDA 12.x; these wheels match it.
 RUN pip install --no-cache-dir \
-    onnxruntime-gpu tensorrt lz4 ratiopath "mlflow<3.0" torch torchvision \
+    onnxruntime-gpu==1.19.2 \
+    tensorrt==10.5.0 \
+    lz4 \
+    ratiopath \
+    "mlflow<3.0" \
+    torch \
+    torchvision \
     "timm>=1.0.0" \
     "huggingface-hub>=0.23.0"
