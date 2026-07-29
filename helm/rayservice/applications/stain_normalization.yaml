@@ -24,8 +24,8 @@
         batch_wait_timeout_s: 0.05
         intra_op_num_threads: 4
         trt_max_workspace_size: 8589934592
-        trt_cache_path: /mnt/cache/trt_cache/stain-normalization-1/b24
+        trt_cache_path: /mnt/cache/trt_cache/stain-normalization-1/ep27-step210000-b24
         trt_builder_optimization_level: 3
         model:
           _target_: providers.model_provider:mlflow
-          artifact_uri: mlflow-artifacts:/79/5a53cd18689e4d7697aa1b4160ded0ed/artifacts/checkpoints/epoch=17-step=135000/model.onnx
+          artifact_uri: mlflow-artifacts:/79/0abc0730ab914457a42d1e6c3e0838c4/artifacts/checkpoints/epoch=27-step=210000/model.onnx
